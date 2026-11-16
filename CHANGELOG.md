@@ -9,6 +9,16 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 ### English
 
+## [0.2.50] - 2026-11-17
+
+### 中文
+
+- **支持已验签 feed 中的跨 Release 官方下载地址（#235）**：官方 v0.2.15 起，Windows/Linux 普通引擎 0.1.60 和 dsv41/SYCL 0.1.59 通过绝对 URL 指向旧发布页。原先把绝对 URL 当文件名、只在当前 Release 查找，导致新装和升级无法生成下载计划。现在已验签 feed 中的相对文件名仍按当前 tag 解析；绝对地址仅接受官方 `Niko1221/Strata` GitHub Release 下载路径，并从对应旧 tag 校验 SHA256 和大小后下载。不绕过 DeepSeek 在新版官方源码中的退役。Mac 引擎仍固定 0.1.47。
+
+### English
+
+- **Resolve official cross-release download URLs in a verified feed (#235)**: starting with official v0.2.15, Windows/Linux regular engines 0.1.60 and dsv41/SYCL 0.1.59 are published as absolute URLs on older release pages. Manager previously treated those URLs as filenames and only searched the current release, so new installs and upgrades could not build a download plan. Relative filenames in a verified feed still resolve on the current tag; absolute URLs are accepted only for official `Niko1221/Strata` GitHub Release download paths, and downloads still require matching SHA256 and size on that older tag. This does not bypass DeepSeek retirement in newer official source. The Mac engine pin remains 0.1.47.
+
 ## [0.2.49] - 2026-11-16
 
 ### 中文
