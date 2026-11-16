@@ -1933,10 +1933,7 @@ impl RuntimeState {
             .get(&previous.id)
             .copied()
             .unwrap_or(old_endpoint.listen_address);
-        network::assert_replacement_bind_available(
-            target_plan.listen_address,
-            owned_listener,
-        )?;
+        network::assert_replacement_bind_available(target_plan.listen_address, owned_listener)?;
         let mut processes = self.processes.lock().map_err(|e| e.to_string())?;
         let process = processes
             .get_mut(&previous.id)
@@ -1947,19 +1944,23 @@ impl RuntimeState {
         {
             return Err("当前模型的进程归属已变化，未切换".into());
         }
-        let mut retired = Vec::new();
         #[cfg(windows)]
-        for listener in external::listener_ids(&target_plan.profile)? {
-            if !process.owns_pid(listener)? {
-                return Err(diagnostics::error(
-                    "STARTUP_PORT_IN_USE",
-                    "目标模型端口存在外部监听进程，保留当前模型",
-                    "prepare",
-                ));
+        {
+            let mut retired = Vec::new();
+            for listener in external::listener_ids(&target_plan.profile)? {
+                if !process.owns_pid(listener)? {
+                    return Err(diagnostics::error(
+                        "STARTUP_PORT_IN_USE",
+                        "目标模型端口存在外部监听进程，保留当前模型",
+                        "prepare",
+                    ));
+                }
+                retired.push(listener);
             }
-            retired.push(listener);
+            Ok(retired)
         }
-        Ok(retired)
+        #[cfg(not(windows))]
+        Ok(Vec::new())
     }
 
     async fn switch_local_service_inner(
@@ -2002,6 +2003,7 @@ impl RuntimeState {
         })
         .await
         .map_err(|e| e.to_string())??;
+        #[cfg_attr(not(windows), allow(unused_variables))]
         let retired_listeners = if let Some(previous) = &old {
             inspect_idle_http(&self, previous).await?;
             self.preflight_switch_listener(previous, &target_plan)?

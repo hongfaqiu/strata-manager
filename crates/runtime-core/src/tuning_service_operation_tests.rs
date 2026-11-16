@@ -277,7 +277,9 @@ async fn concurrency_comparison_switches_same_port_owned_profiles_then_restores_
             .clone()
             .switch_local_service(candidate.id.clone())
             .await
-            .unwrap_or_else(|error| panic!("same-port owned switch to {} failed: {error}", candidate.id));
+            .unwrap_or_else(|error| {
+                panic!("same-port owned switch to {} failed: {error}", candidate.id)
+            });
         assert!(status.running && status.owned);
         assert!(accepts(fixture.port));
         let processes = state.processes.lock().unwrap();
@@ -304,11 +306,7 @@ async fn concurrency_comparison_rejects_foreign_port_before_stopping_owned_model
     let plan = prepare_startup(&base, &state.processes, &state.tasks).unwrap();
     start_prepared_service(&state, base.clone(), plan, None).unwrap();
     wait_port(fixture.port).await;
-    assert!(state
-        .clone()
-        .switch_local_service(target.id)
-        .await
-        .is_err());
+    assert!(state.clone().switch_local_service(target.id).await.is_err());
     assert!(accepts(fixture.port), "original owned service must survive");
     assert!(state.processes.lock().unwrap()[&base.id].status.running);
     fixture.assert_unrelated(&other_id, occupied_port, other_pid);
