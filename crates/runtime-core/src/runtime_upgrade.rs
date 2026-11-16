@@ -283,15 +283,7 @@ fn cached_installation_metadata(cached: Value, checked_now: u64) -> Option<Runti
                 && asset.sha256.len() == 64
                 && asset.sha256.bytes().all(|b| b.is_ascii_hexdigit())
                 && asset.sha256 == asset.sha256.to_ascii_lowercase()
-                && [format!("v{version}"), version.to_owned()]
-                    .into_iter()
-                    .any(|tag| {
-                        asset.url
-                            == format!(
-                                "https://github.com/Niko1221/Strata/releases/download/{tag}/{}",
-                                asset.name
-                            )
-                    })
+                && engine_package::is_official_download_url(&asset.url, &asset.name)
         })
     {
         return None;
@@ -590,10 +582,34 @@ async fn release_feed_assets(
     let Some(platform) = engine_package::this_release_install_platform() else {
         return Ok(Some((sequence, Vec::new(), Vec::new())));
     };
-    let assets = engine_package::feed_assets(&feed, release, tag, platform)?;
+    let foreign_tags = engine_package::foreign_feed_tags(&feed, tag)?;
+    let mut other_releases = std::collections::BTreeMap::new();
+    if !foreign_tags.is_empty() {
+        let api_client = reqwest::Client::builder()
+            .connect_timeout(Duration::from_secs(8))
+            .timeout(Duration::from_secs(20))
+            .redirect(reqwest::redirect::Policy::none())
+            .user_agent("Strata-Manager-runtime-updates")
+            .build()
+            .map_err(|error| error.to_string())?;
+        for foreign in &foreign_tags {
+            let api =
+                format!("https://api.github.com/repos/Niko1221/Strata/releases/tags/{foreign}");
+            let (foreign_release, _) =
+                github_source::get_json(&api_client, &api, &format!("上游发布 {foreign}")).await?;
+            if foreign_release["tag_name"].as_str() != Some(foreign.as_str()) {
+                return Err(format!(
+                    "上游发布 {foreign} 的标记不匹配 / The release tag does not match {foreign}"
+                ));
+            }
+            other_releases.insert(foreign.clone(), foreign_release);
+        }
+    }
+    let assets = engine_package::feed_assets_from(&feed, release, tag, platform, &other_releases)?;
     // An unusable `dsv41` member never blocks a Strata engine update.
     let dsv41 =
-        engine_package::dsv41_feed_assets(&feed, release, tag, platform).unwrap_or_default();
+        engine_package::dsv41_feed_assets_from(&feed, release, tag, platform, &other_releases)
+            .unwrap_or_default();
     Ok(Some((sequence, assets, dsv41)))
 }
 

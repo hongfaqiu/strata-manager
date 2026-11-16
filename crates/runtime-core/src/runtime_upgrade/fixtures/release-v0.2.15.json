@@ -1,0 +1,34 @@
+{
+ "html_url": "https://github.com/Niko1221/Strata/releases/tag/v0.2.15",
+ "tag_name": "v0.2.15",
+ "prerelease": false,
+ "draft": false,
+ "name": "Strata 0.2.15",
+ "published_at": "2026-11-16T09:22:29Z",
+ "assets": [
+  {
+   "name": "strata-dsv41-0.1.59-linux-aarch64-cuda-cuda13.tar.gz",
+   "size": 554500302,
+   "digest": "sha256:55f2607d4dc06311aafe335e8b84664c8eecc93376d8a1b59c806f298017749c",
+   "browser_download_url": "https://github.com/Niko1221/Strata/releases/download/v0.2.15/strata-dsv41-0.1.59-linux-aarch64-cuda-cuda13.tar.gz"
+  },
+  {
+   "name": "strata-engine-0.1.59-linux-aarch64-cuda-cuda13.tar.gz",
+   "size": 660873738,
+   "digest": "sha256:b213d9b173aae99645fc5922d42276fa1ed17ac67f7b788c55c912ba49e148f1",
+   "browser_download_url": "https://github.com/Niko1221/Strata/releases/download/v0.2.15/strata-engine-0.1.59-linux-aarch64-cuda-cuda13.tar.gz"
+  },
+  {
+   "name": "strata-feed.json",
+   "size": 17521,
+   "digest": "sha256:8ba61d12d658a6b06314ff309445b2de54d93e396cc7fe975edeca27b2ef1484",
+   "browser_download_url": "https://github.com/Niko1221/Strata/releases/download/v0.2.15/strata-feed.json"
+  },
+  {
+   "name": "strata-feed.json.sig",
+   "size": 151,
+   "digest": "sha256:041b1952e5f17f3388f300e52a273ba4ac31866b355aaa08a705d46c32f9c71d",
+   "browser_download_url": "https://github.com/Niko1221/Strata/releases/download/v0.2.15/strata-feed.json.sig"
+  }
+ ]
+}
