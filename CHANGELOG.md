@@ -9,6 +9,18 @@ Maintain both languages for each version. Move unreleased changes into the actua
 
 ### English
 
+## [0.2.48] - 2026-11-16
+
+### 中文
+
+- **识别 prefill 无法复制专家，并单独对待 Windows 0xC0000409**：启动失败日志出现 `could not copy experts` 时，诊断为已确认的 prefill 专家复制中止，可临时在该模型运行配置的 env 设置 `STRATA_PF_SMALL=0`；Manager 不自动写入，也不保证一定能恢复。仅有 Windows 状态 `0xC0000409`（堆栈缓冲区溢出 / 快速失败中止）时，原因尚未确定，不能据此认定是同一问题，也不把该变量当成修复。
+- **复制当前服务密钥**：接入 API 对话框可复制当前托管服务正在使用的密钥，默认不明文显示。仅当本应用托管的服务正在运行、配置仍与该次启动一致、且恰好一把密钥时才允许复制；服务未运行或配置在启动后已更改时不提供密钥，避免把可能无效的配置密钥当成当前服务密钥。不读 client vault，也不造、轮换或改写密钥。
+
+### English
+
+- **Recognize a prefill expert-copy abort, and treat a bare Windows 0xC0000409 separately**: when the startup log contains `could not copy experts`, the diagnostic is a confirmed prefill abort. You may temporarily set `STRATA_PF_SMALL=0` in that model's run-config env; Manager does not write the variable and does not guarantee a recovery. A bare Windows status `0xC0000409` (stack buffer overrun / fail-fast abort) has more than one cause, so it is not treated as the same bug and that variable is not offered as a fix.
+- **Copy the current service key**: the Connect API dialog can copy the key the hosted service is using, without displaying it. Copy is allowed only when this app is hosting a running service, the current configuration still matches that start, and there is exactly one key. If the service is not running, or the configuration changed after start, no key is returned, so a possibly stale config key is not presented as the current service key. The client vault is not read, and no key is minted, rotated, or written.
+
 ## [0.2.47] - 2026-11-13
 
 ### 中文
