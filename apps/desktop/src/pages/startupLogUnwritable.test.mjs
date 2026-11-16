@@ -51,3 +51,18 @@ test('a Smart App Control block gets its own title and the Windows Security note
   assert.match(card, /App & browser control/);
   assert.match(card, /strata-vision\.exe/);
 });
+
+// Q6C: expert-copy abort vs a bare Windows 0xC0000409, which must not share one root cause.
+test('an expert-copy prefill abort and a bare 0xC0000409 get distinct titles and notes', () => {
+  const card = source('./StartupDiagnosticCard.tsx');
+  assert.match(card, /startupExpertCopyFailed\(diagnostic\)/);
+  assert.match(card, /startupWindowsStatusC0000409\(diagnostic\)/);
+  assert.match(card, /'Prefill 时无法复制专家' : 'Prefill could not copy experts'/);
+  assert.match(card, /'引擎以 0xC0000409 退出' : 'Engine exited with 0xC0000409'/);
+  assert.match(card, /data-testid="startup-diagnostic-expert-copy"/);
+  assert.match(card, /data-testid="startup-diagnostic-c0000409"/);
+  assert.match(card, /STRATA_PF_SMALL=0/);
+  assert.match(card, /not guaranteed to fix this/);
+  assert.match(card, /do not treat STRATA_PF_SMALL=0 as the fix/);
+  assert.match(card, /0xC0000409 by itself does not identify the cause/);
+});

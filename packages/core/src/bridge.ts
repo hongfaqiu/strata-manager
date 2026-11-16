@@ -4,7 +4,7 @@ import { decodeChatChunk, SSEParser, type ChatDelta, type StreamToolEvent } from
 import type { OfficialSetupOptions, ModelInspectRequest } from './official-setup';
 import type { ChatRuntimeEvidence } from './chat';
 import { validateResourceAssessmentRequest, resourceRequestFromConfiguration, type ResourceAssessmentRequest, type SetupResourceAssessment } from './resource-assessment';
-import type { ServiceSharingStatus, SetServiceAuthRequest, ServiceAuthResult } from './service-sharing';
+import type { ServiceSharingStatus, SetServiceAuthRequest, ServiceAuthResult, ServiceKeyCopyResult } from './service-sharing';
 import type { BenchmarkIdentity } from './benchmark-comparison';
 import type { RuntimeReleaseAsset, RuntimeZipDownloadOptions, RuntimeZipDownloadCheckResult } from './runtime-types';
 import type { SystemLanguage } from './languages';
@@ -446,6 +446,8 @@ export const supportDiagnosticsText = (input: { profile?: ServiceProfile; instal
 };
 export const assessSetupResources = (request: ResourceAssessmentRequest): Promise<SetupResourceAssessment> => native('assess_setup_resources', { request: validateResourceAssessmentRequest(request) });
 export const serviceSharingStatus = (profile: ServiceProfile): Promise<ServiceSharingStatus> => native('service_sharing_status', { profile });
+/** One-shot read of the hosted run-config api_key for clipboard copy. Do not log the key field. */
+export const copyCurrentServiceKey = (profile: ServiceProfile): Promise<ServiceKeyCopyResult> => native('copy_current_service_key', { profile });
 export const setServiceAuth = (profile: ServiceProfile, request: SetServiceAuthRequest): Promise<ServiceAuthResult> => native('set_service_auth', { profile, request });
 export const benchmarkIdentity = async (profile: ServiceProfile): Promise<BenchmarkIdentity> => {
   const value = await native<BenchmarkIdentity & { resourceConfiguration?: JsonObject }>('benchmark_identity', { profile });

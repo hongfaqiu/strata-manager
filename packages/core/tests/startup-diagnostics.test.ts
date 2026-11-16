@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { latestStartupDiagnostic, parseStartupDiagnostic, primaryStartupDiagnosticAction, readStartupDiagnostic, startupEngineCrashed, startupMemoryShortage, startupWindowsSacBlocked } from '../src/startup-diagnostics';
+import { latestStartupDiagnostic, parseStartupDiagnostic, primaryStartupDiagnosticAction, readStartupDiagnostic, startupEngineCrashed, startupExpertCopyFailed, startupMemoryShortage, startupWindowsSacBlocked, startupWindowsStatusC0000409 } from '../src/startup-diagnostics';
 
 const diagnostic = { profileId: 'model-a', attemptStartedAt: 100, failedAt: 200, phase: 'starting', category: 'timeout', confidence: 'confirmed',
   code: 'STARTUP_API_TIMEOUT', message: 'API not ready; process retained', evidence: [{ source: 'startupError', at: 200, message: 'not ready' }],
@@ -128,5 +128,26 @@ describe('startup memory shortage', () => {
     const parsed = parseStartupDiagnostic(stored, 'model-a')!;
     expect(startupWindowsSacBlocked(parsed)).toBe(true);
     expect(primaryStartupDiagnosticAction(parsed)).toBe('viewLogs');
+  });
+});
+
+describe('Q6C prefill expert copy and 0xC0000409', () => {
+  it('recognizes the expert-copy and bare Windows status codes without hiding rollback', () => {
+    expect(startupExpertCopyFailed({ code: 'STARTUP_EXPERT_COPY_FAILED' })).toBe(true);
+    expect(startupExpertCopyFailed({ code: 'STARTUP_WINDOWS_STATUS_C0000409' })).toBe(false);
+    expect(startupWindowsStatusC0000409({ code: 'STARTUP_WINDOWS_STATUS_C0000409' })).toBe(true);
+    expect(startupWindowsStatusC0000409({ code: 'STARTUP_ENGINE_CRASHED' })).toBe(false);
+    expect(startupEngineCrashed({ code: 'STARTUP_EXPERT_COPY_FAILED', category: 'engine' })).toBe(true);
+    expect(startupEngineCrashed({ code: 'STARTUP_WINDOWS_STATUS_C0000409', category: 'engine', exitCode: -1073740791 })).toBe(true);
+    const copy = parseStartupDiagnostic({ ...diagnostic, phase: 'loading', category: 'engine', confidence: 'confirmed', code: 'STARTUP_EXPERT_COPY_FAILED',
+      message: 'The engine aborted during prefill', actions: ['openConfig', 'viewLogs', 'exportDiagnostics'],
+      evidence: [{ source: 'serviceLog', at: 200, message: 'prefill: the expert source could not copy experts 256.. of layer 0' }] }, 'model-a')!;
+    expect(startupExpertCopyFailed(copy)).toBe(true);
+    expect(primaryStartupDiagnosticAction(copy)).toBe('openConfig');
+    const bare = parseStartupDiagnostic({ ...diagnostic, phase: 'loading', category: 'engine', confidence: 'unknown', code: 'STARTUP_WINDOWS_STATUS_C0000409',
+      message: 'Engine exited with 0xC0000409', actions: ['viewLogs', 'exportDiagnostics'], exitCode: -1073740791 }, 'model-a')!;
+    expect(startupWindowsStatusC0000409(bare)).toBe(true);
+    expect(bare.exitCode).toBe(-1073740791);
+    expect(primaryStartupDiagnosticAction(bare)).toBe('viewLogs');
   });
 });

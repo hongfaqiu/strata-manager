@@ -209,6 +209,106 @@ pub fn status(
     })
 }
 
+/// Outcome of reading the hosted service key for a one-shot clipboard copy.
+/// The key field is omitted unless `outcome` is `"ready"` (owned service running
+/// and the current config still matches that start). Never log or Display this value.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ServiceKeyCopyResult {
+    pub outcome: String,
+    pub key_count: usize,
+    pub no_key_chosen: bool,
+    pub restart_required: bool,
+    pub running: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub key: Option<String>,
+}
+
+impl std::fmt::Debug for ServiceKeyCopyResult {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ServiceKeyCopyResult")
+            .field("outcome", &self.outcome)
+            .field("key_count", &self.key_count)
+            .field("no_key_chosen", &self.no_key_chosen)
+            .field("restart_required", &self.restart_required)
+            .field("running", &self.running)
+            .field("key", &self.key.as_ref().map(|_| "[redacted]"))
+            .finish()
+    }
+}
+
+fn configured_server_keys(config: &Value) -> Vec<String> {
+    if explicit_no_key(config.get("api_key")) {
+        return Vec::new();
+    }
+    match config.get("api_key") {
+        Some(Value::String(key)) if !key.trim().is_empty() => vec![key.clone()],
+        Some(Value::Array(keys)) => keys
+            .iter()
+            .filter_map(|key| {
+                key.as_str()
+                    .filter(|value| !value.trim().is_empty())
+                    .map(str::to_owned)
+            })
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
+/// Decide whether the current hosted service key may be copied.
+/// There is no start-time key snapshot on the owned process (only the profile
+/// paths are kept after spawn). Do not invent one or read the client vault.
+/// A key is returned only when the Manager-owned service is running and the
+/// current config still matches that start (`restart_required` is false).
+fn copy_outcome(
+    running: bool,
+    restart_required: bool,
+    no_key_chosen: bool,
+    key_count: usize,
+) -> &'static str {
+    if !running {
+        "not_running"
+    } else if restart_required {
+        "stale"
+    } else if no_key_chosen {
+        "none_chosen"
+    } else if key_count == 0 {
+        "no_key"
+    } else if key_count > 1 {
+        "multiple"
+    } else {
+        "ready"
+    }
+}
+
+/// Read the api_key only when it is the key the hosted service is using.
+/// Same files as `status`. Does not mint, rotate, write, or read the client vault.
+pub fn current_key_for_copy(
+    state: &RuntimeState,
+    incoming: &ServiceProfile,
+) -> Result<ServiceKeyCopyResult, String> {
+    let status = status(state, incoming)?;
+    let profile = selected(state, incoming)?;
+    let snapshot = storage::read_snapshot(&profile)?;
+    let keys = configured_server_keys(&snapshot.config);
+    let outcome = copy_outcome(
+        status.running,
+        status.restart_required,
+        status.no_key_chosen,
+        keys.len(),
+    );
+    Ok(ServiceKeyCopyResult {
+        outcome: outcome.into(),
+        key_count: keys.len(),
+        no_key_chosen: status.no_key_chosen,
+        restart_required: status.restart_required,
+        running: status.running,
+        key: (outcome == "ready")
+            .then(|| keys.into_iter().next())
+            .flatten(),
+    })
+}
+
 fn edited(config: &Value, request: &SetServiceAuthRequest) -> Result<Value, String> {
     if request.expected_revision.len() != 64
         || !request
@@ -533,6 +633,68 @@ mod tests {
             status(&state, &profile).unwrap().config_revision,
             initial.config_revision
         );
+        assert!(state.processes.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn copy_outcome_returns_a_key_only_when_the_running_service_still_matches() {
+        assert_eq!(copy_outcome(false, false, false, 1), "not_running");
+        assert_eq!(copy_outcome(false, true, false, 1), "not_running");
+        assert_eq!(copy_outcome(false, false, false, 2), "not_running");
+        assert_eq!(copy_outcome(true, true, false, 1), "stale");
+        assert_eq!(copy_outcome(true, true, false, 2), "stale");
+        assert_eq!(copy_outcome(true, false, true, 0), "none_chosen");
+        assert_eq!(copy_outcome(true, false, false, 0), "no_key");
+        assert_eq!(copy_outcome(true, false, false, 2), "multiple");
+        assert_eq!(copy_outcome(true, false, false, 1), "ready");
+    }
+
+    #[test]
+    fn current_key_for_copy_refuses_a_stopped_service_and_never_writes() {
+        let (_directory, state, profile) = fixture();
+        // Stopped: even a single config key is not the key a current service is using.
+        let mut config = storage::read(&profile).unwrap();
+        config["api_key"] = json!("preview-test-key-not-real");
+        std::fs::write(&profile.config_path, serde_json::to_vec(&config).unwrap()).unwrap();
+        let revision = status(&state, &profile).unwrap().config_revision;
+        let stopped = current_key_for_copy(&state, &profile).unwrap();
+        assert_eq!(stopped.outcome, "not_running");
+        assert!(!stopped.running);
+        assert_eq!(stopped.key_count, 1);
+        assert!(stopped.key.is_none());
+        let debug = format!("{stopped:?}");
+        assert!(!debug.contains("preview-test-key-not-real"));
+        let serialized = serde_json::to_string(&stopped).unwrap();
+        assert!(!serialized.contains("preview-test-key-not-real"));
+        assert_eq!(status(&state, &profile).unwrap().config_revision, revision);
+        assert_eq!(
+            storage::read(&profile).unwrap()["api_key"],
+            "preview-test-key-not-real"
+        );
+
+        // Two keys while stopped: still not_running, and neither value is returned.
+        config["api_key"] = json!(["preview-test-key-not-real", "preview-test-key-also-fake"]);
+        std::fs::write(&profile.config_path, serde_json::to_vec(&config).unwrap()).unwrap();
+        let many = current_key_for_copy(&state, &profile).unwrap();
+        assert_eq!(many.outcome, "not_running");
+        assert!(many.key.is_none());
+        assert!(!format!("{many:?}").contains("preview-test-key-not-real"));
+        assert!(!serde_json::to_string(&many)
+            .unwrap()
+            .contains("preview-test-key-also-fake"));
+
+        config["api_key"] = json!("none");
+        std::fs::write(&profile.config_path, serde_json::to_vec(&config).unwrap()).unwrap();
+        let none = current_key_for_copy(&state, &profile).unwrap();
+        assert_eq!(none.outcome, "not_running");
+        assert!(none.no_key_chosen);
+        assert!(none.key.is_none());
+
+        let mut unknown = profile.clone();
+        unknown.id = "unknown".into();
+        assert!(current_key_for_copy(&state, &unknown)
+            .unwrap_err()
+            .contains("尚未导入"));
         assert!(state.processes.lock().unwrap().is_empty());
     }
 }

@@ -52,3 +52,71 @@ test('Python and shell examples keep dynamic values in correctly quoted literals
   assert.ok(bashLiteral(specialModel).includes(`'"'"'single'"'"'`));
   for (const line of apiCodeExample(connection, 'curl').split('\n').slice(1, 4)) assert.equal(line.match(/\\+$/)?.[0], '\\');
 });
+
+import { readFileSync } from 'node:fs';
+import { serviceKeyCopyAvailability, serviceKeyCopyFeedback } from './apiIntegration.ts';
+
+const sharing = { hasServerKey: true, keyCount: 1, noKeyChosen: false, restartRequired: false, running: true };
+
+test('the service-key copy control is enabled only when the running service still matches a single key', () => {
+  const ready = serviceKeyCopyAvailability({ keyRequired: true, sharing });
+  assert.equal(ready.enabled, true);
+  assert.equal(ready.outcome, 'ready');
+  assert.match(ready.hintZh, /正在使用的密钥/);
+  assert.match(ready.hintEn, /currently using/);
+  assert.match(ready.hintZh, /不会显示/);
+  assert.match(ready.hintEn, /not shown/);
+  const keyless = serviceKeyCopyAvailability({ keyRequired: false, sharing });
+  assert.equal(keyless.enabled, false);
+  assert.equal(keyless.outcome, 'keyless');
+  assert.match(keyless.hintEn, /strata-local/);
+  const missing = serviceKeyCopyAvailability({ keyRequired: true, sharing: { ...sharing, hasServerKey: false, keyCount: 0 } });
+  assert.equal(missing.enabled, false);
+  assert.equal(missing.outcome, 'no_key');
+  const none = serviceKeyCopyAvailability({ sharing: { ...sharing, hasServerKey: false, keyCount: 0, noKeyChosen: true } });
+  assert.equal(none.outcome, 'none_chosen');
+  assert.equal(none.enabled, false);
+  const many = serviceKeyCopyAvailability({ sharing: { ...sharing, keyCount: 2 } });
+  assert.equal(many.enabled, false);
+  assert.equal(many.outcome, 'multiple');
+  const foreign = serviceKeyCopyAvailability({ sharingError: true, keyRequired: true });
+  assert.equal(foreign.outcome, 'not_owned');
+  assert.equal(foreign.enabled, false);
+  const stopped = serviceKeyCopyAvailability({ keyRequired: true, sharing: { ...sharing, running: false } });
+  assert.equal(stopped.enabled, false);
+  assert.equal(stopped.outcome, 'not_running');
+  assert.match(stopped.hintZh, /请先启动/);
+  assert.match(stopped.hintEn, /Start the hosted service/);
+  const stale = serviceKeyCopyAvailability({ keyRequired: true, sharing: { ...sharing, restartRequired: true } });
+  assert.equal(stale.enabled, false);
+  assert.equal(stale.outcome, 'stale');
+  assert.match(stale.hintZh, /请先重启/);
+  assert.match(stale.hintEn, /Restart the service/);
+  // Stale and stopped take precedence over key-count messages; IPC also withholds the key.
+  const staleMany = serviceKeyCopyAvailability({ sharing: { ...sharing, keyCount: 2, restartRequired: true } });
+  assert.equal(staleMany.outcome, 'stale');
+  assert.equal(staleMany.enabled, false);
+  const copied = serviceKeyCopyFeedback('copied');
+  assert.match(copied.hintZh, /不会在此显示/);
+  assert.doesNotMatch(copied.hintZh, /可能仍在使用/);
+  assert.doesNotMatch(copied.hintZh, /preview-test-key-not-real/);
+  assert.doesNotMatch(copied.hintEn, /preview-test-key-not-real/);
+  const staleFeedback = serviceKeyCopyFeedback('stale');
+  assert.equal(staleFeedback.hintZh, stale.hintZh);
+  const stoppedFeedback = serviceKeyCopyFeedback('not_running');
+  assert.equal(stoppedFeedback.hintZh, stopped.hintZh);
+});
+
+test('the connect-API dialog copies the service key without rendering it', () => {
+  const dialog = readFileSync(new URL('./ApiIntegrationDialog.tsx', import.meta.url), 'utf8');
+  assert.match(dialog, /data-testid="api-copy-service-key"/);
+  assert.match(dialog, /复制当前服务密钥/);
+  assert.match(dialog, /Copy current service key/);
+  assert.match(dialog, /copyCurrentServiceKey/);
+  assert.match(dialog, /result\.key = undefined/);
+  assert.doesNotMatch(dialog, /copyFeedback\.key/);
+  assert.doesNotMatch(dialog, /sharing\.key\b/);
+  // The dialog must not interpolate the key into JSX or visible status text.
+  assert.doesNotMatch(dialog, /\{result\.key\}/);
+  assert.doesNotMatch(dialog, /api-copy-service-key-status[\s\S]*result\.key/);
+});

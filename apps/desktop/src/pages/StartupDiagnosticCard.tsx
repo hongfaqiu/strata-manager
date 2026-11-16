@@ -1,7 +1,7 @@
 import type { AppLanguage } from "@strata-manager/core";
 import type { ReactNode } from 'react';
 import { AlertTriangle, FileText, RotateCcw } from 'lucide-react';
-import { primaryStartupDiagnosticAction, startupEngineCrashed, startupMemoryShortage, startupWindowsSacBlocked, type StartupDiagnosticAction, type StartupFailureDiagnostic } from '../../../../packages/core/src/startup-diagnostics';
+import { primaryStartupDiagnosticAction, startupEngineCrashed, startupExpertCopyFailed, startupMemoryShortage, startupWindowsSacBlocked, startupWindowsStatusC0000409, type StartupDiagnosticAction, type StartupFailureDiagnostic } from '../../../../packages/core/src/startup-diagnostics';
 import './startup-diagnostic.css';
 
 export interface StartupDiagnosticCardProps {
@@ -27,10 +27,14 @@ export function StartupDiagnosticCard({ language, diagnostic, onAction, profileN
   const logUnwritable = diagnostic.code === 'STARTUP_LOG_UNWRITABLE';
   // Win11 Smart App Control / WDAC blocked the engine or vision binary (#5619).
   const sacBlocked = startupWindowsSacBlocked(diagnostic);
+  const expertCopyFailed = startupExpertCopyFailed(diagnostic);
+  const statusC0000409 = startupWindowsStatusC0000409(diagnostic);
   // The engine named the allocation that failed while loading (diagnostics.rs memory_report).
   const memory = startupMemoryShortage(diagnostic);
   const title = logUnwritable ? (zh ? '日志文件被占用或无权限' : 'Log file in use or not writable')
     : sacBlocked ? (zh ? 'Windows 智能应用控制拦截了引擎' : 'Windows Smart App Control blocked the engine')
+    : expertCopyFailed ? (zh ? 'Prefill 时无法复制专家' : 'Prefill could not copy experts')
+    : statusC0000409 ? (zh ? '引擎以 0xC0000409 退出' : 'Engine exited with 0xC0000409')
     : memory === 'vram' ? (zh ? '显存不够，模型没加载上' : 'Out of VRAM while loading the model')
     : memory === 'commit' ? (zh ? 'Windows 虚拟内存不够，模型没加载上' : 'Windows ran out of virtual memory while loading the model') : category;
   const reserveFix = memory && reserveFixMib && onReserveFix ? reserveFixMib : undefined;
@@ -50,6 +54,8 @@ export function StartupDiagnosticCard({ language, diagnostic, onAction, profileN
     {diagnostic.category === 'python' && <p className="startup-diagnostic-retained">{zh ? '应使用该 Strata 目录自带的 .venv 或嵌入式 Python（与 run-*.bat 一致），不是系统 Python。' : "It should run with the Strata folder's own .venv or embedded Python (as run-*.bat does), not the system Python."}</p>}
     {logUnwritable && <p className="startup-diagnostic-retained">{zh ? '每次启动前 Manager 都会先检查日志文件，打不开就自动改用同目录或 Manager 目录下的新日志文件；换了仍失败时自动恢复会停下，请按上面的步骤处理后再启动。' : 'Before every start Manager checks the log file and switches to a new one beside it or in Manager\'s folder when it cannot be opened. If that still fails, automatic recovery stops; follow the steps above, then start again.'}</p>}
     {sacBlocked && <p className="startup-diagnostic-retained" data-testid="startup-diagnostic-sac">{zh ? '常见于 Windows 11 开启「智能应用控制」时拦截 strata-vision.exe 或主引擎。可在「Windows 安全中心 › 应用和浏览器控制」关闭智能应用控制后重试；Manager 无法代为关闭。也可等上游提供已签名版本。' : 'Common when Windows 11 Smart App Control blocks strata-vision.exe or the main engine. Turn it off under Windows Security › App & browser control, then try again; Manager cannot turn it off for you. Or wait for a signed upstream build.'}</p>}
+    {expertCopyFailed && <p className="startup-diagnostic-retained" data-testid="startup-diagnostic-expert-copy">{zh ? '不要自动改配置。仅在日志出现无法复制专家时，可在运行配置 env 里临时试 STRATA_PF_SMALL=0；不保证能修好。' : 'Do not change the configuration automatically. Only if the log shows that experts could not be copied, you may temporarily try STRATA_PF_SMALL=0 in the run-config env; it is not guaranteed to fix this.'}</p>}
+    {statusC0000409 && !expertCopyFailed && <p className="startup-diagnostic-retained" data-testid="startup-diagnostic-c0000409">{zh ? '0xC0000409 本身不能说明原因。没有 “could not copy experts” 日志时，请勿把 STRATA_PF_SMALL=0 当成修复办法。' : '0xC0000409 by itself does not identify the cause. Without a “could not copy experts” log line, do not treat STRATA_PF_SMALL=0 as the fix.'}</p>}
     {diagnostic.category === 'engine' && !sacBlocked && <p className="startup-diagnostic-retained">{zh ? '下方「查看诊断依据」里有引擎最后的报错，完整输出见启动日志。' : 'The engine\'s last error is under "View diagnostic evidence"; the full output is in the startup log.'}</p>}
     {diagnostic.confidence === 'suspected' && <p className="startup-diagnostic-retained">{zh ? '引擎输出提供了线索，尚不能确认整机内存耗尽。' : 'Engine output provides a clue; a system OOM has not been established.'}</p>}
     {memory && <div className="startup-diagnostic-memory" data-testid="startup-diagnostic-memory">

@@ -2434,6 +2434,7 @@ pub fn run() {
             daily_experience::assess_setup_resources,
             daily_experience::benchmark_identity,
             service_sharing::service_sharing_status,
+            service_sharing::copy_current_service_key,
             service_sharing::set_service_auth,
             setup_disk_preflight,
             scan_local_models,
