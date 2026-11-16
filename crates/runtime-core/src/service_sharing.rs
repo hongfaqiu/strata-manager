@@ -679,11 +679,9 @@ mod tests {
         assert_eq!(many.outcome, "not_running");
         assert!(many.key.is_none());
         assert!(!format!("{many:?}").contains("preview-test-key-not-real"));
-        assert!(
-            !serde_json::to_string(&many)
-                .unwrap()
-                .contains("preview-test-key-also-fake")
-        );
+        assert!(!serde_json::to_string(&many)
+            .unwrap()
+            .contains("preview-test-key-also-fake"));
 
         config["api_key"] = json!("none");
         std::fs::write(&profile.config_path, serde_json::to_vec(&config).unwrap()).unwrap();
@@ -694,11 +692,9 @@ mod tests {
 
         let mut unknown = profile.clone();
         unknown.id = "unknown".into();
-        assert!(
-            current_key_for_copy(&state, &unknown)
-                .unwrap_err()
-                .contains("尚未导入")
-        );
+        assert!(current_key_for_copy(&state, &unknown)
+            .unwrap_err()
+            .contains("尚未导入"));
         assert!(state.processes.lock().unwrap().is_empty());
     }
 }
