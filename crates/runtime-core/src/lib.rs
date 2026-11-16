@@ -1917,6 +1917,51 @@ impl RuntimeState {
             .and_then(Value::as_str)
             .map(String::from))
     }
+    /// The selected model is still listening while a configuration version is
+    /// prepared. A shared port is not an external collision if every listener
+    /// belongs to the held process tree for the current Manager-owned model.
+    fn preflight_switch_listener(
+        &self,
+        previous: &ServiceProfile,
+        target_plan: &StartupPlan,
+    ) -> Result<Vec<u32>, String> {
+        let old_endpoint = network::endpoint(&json!({}), previous)?;
+        let owned_listener = self
+            .owned_listeners
+            .lock()
+            .map_err(|e| e.to_string())?
+            .get(&previous.id)
+            .copied()
+            .unwrap_or(old_endpoint.listen_address);
+        network::assert_replacement_bind_available(
+            target_plan.listen_address,
+            owned_listener,
+        )?;
+        let mut processes = self.processes.lock().map_err(|e| e.to_string())?;
+        let process = processes
+            .get_mut(&previous.id)
+            .ok_or("当前模型缺少受管进程记录，未切换")?;
+        if !process.refresh()?.running
+            || !process.status.owned
+            || process.profile.as_ref().map(|profile| &profile.id) != Some(&previous.id)
+        {
+            return Err("当前模型的进程归属已变化，未切换".into());
+        }
+        let mut retired = Vec::new();
+        #[cfg(windows)]
+        for listener in external::listener_ids(&target_plan.profile)? {
+            if !process.owns_pid(listener)? {
+                return Err(diagnostics::error(
+                    "STARTUP_PORT_IN_USE",
+                    "目标模型端口存在外部监听进程，保留当前模型",
+                    "prepare",
+                ));
+            }
+            retired.push(listener);
+        }
+        Ok(retired)
+    }
+
     async fn switch_local_service_inner(
         self: Arc<Self>,
         profile_id: String,
@@ -1957,19 +2002,12 @@ impl RuntimeState {
         })
         .await
         .map_err(|e| e.to_string())??;
-        if let Some(previous) = &old {
+        let retired_listeners = if let Some(previous) = &old {
             inspect_idle_http(&self, previous).await?;
-        }
-        if old.is_some() && external::port_accepting(&target_plan.profile)? {
-            return Err(diagnostics::error(
-                "STARTUP_PORT_IN_USE",
-                "目标模型端口已被其它进程占用，保留当前模型",
-                "prepare",
-            ));
-        }
-        if old.is_some() {
-            network::assert_bind_available(target_plan.listen_address)?;
-        }
+            self.preflight_switch_listener(previous, &target_plan)?
+        } else {
+            Vec::new()
+        };
         self.selection_changing.store(true, Ordering::Release);
         struct SelectionFlag<'a>(&'a AtomicBool);
         impl Drop for SelectionFlag<'_> {
@@ -1997,7 +2035,30 @@ impl RuntimeState {
             maintenance::wait_idle(&self, &previous).await?;
             stop_service(&self, previous.id.clone()).await?;
             drop(gate);
-            let result = self.clone().ensure_runtime(profile_id.clone(), true).await;
+            // Only the verified old listeners may linger after the owned tree
+            // exits. A new/foreign listener must never be treated as ours.
+            let result = async {
+                #[cfg(windows)]
+                if !retired_listeners.is_empty() {
+                    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+                    loop {
+                        let listeners = external::listener_ids(&target_plan.profile)?;
+                        if listeners.iter().any(|pid| !retired_listeners.contains(pid)) {
+                            return Err("目标端口出现新的外部监听进程，未启动替代服务".into());
+                        }
+                        if listeners.is_empty() {
+                            break;
+                        }
+                        if std::time::Instant::now() >= deadline {
+                            return Err("原受管端口仍在释放，请稍后重试切换".into());
+                        }
+                        tokio::time::sleep(Duration::from_millis(20)).await;
+                    }
+                }
+                network::assert_bind_available(target_plan.listen_address)?;
+                self.clone().ensure_runtime(profile_id.clone(), true).await
+            }
+            .await;
             match result {
                 Ok(status) => {
                     store_set(&self, "localServiceDesired".into(), json!(true))?;

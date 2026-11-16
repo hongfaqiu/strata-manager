@@ -107,6 +107,14 @@ impl Drop for Fixture {
 }
 impl Fixture {
     fn new() -> Self {
+        Self::new_inner(true)
+    }
+
+    fn new_without_tuning_job() -> Self {
+        Self::new_inner(false)
+    }
+
+    fn new_inner(with_tuning_job: bool) -> Self {
         let directory = tempfile::tempdir().unwrap();
         let runtime = directory.path().join("runtime");
         fs::create_dir_all(runtime.join("serve")).unwrap();
@@ -163,7 +171,9 @@ impl Fixture {
             "identity":{},"configFingerprint":tuning::fingerprint(&original),"notes":[]
         }))
         .unwrap();
-        tuning::register_service_operation_fixture(&state, &job).unwrap();
+        if with_tuning_job {
+            tuning::register_service_operation_fixture(&state, &job).unwrap();
+        }
         Self {
             state,
             profile,
@@ -211,6 +221,97 @@ impl Fixture {
         assert!(status.running);
         assert_eq!(status.pid, Some(pid));
     }
+}
+
+fn register_switch_candidate(fixture: &Fixture, port: u16, parallel: usize) -> ServiceProfile {
+    let mut config: Value = serde_json::from_slice(&fixture.original).unwrap();
+    config["port"] = json!(port);
+    config["args"]
+        .as_array_mut()
+        .unwrap()
+        .extend([json!("--parallel"), json!(parallel.to_string())]);
+    let candidate = ServiceProfile {
+        id: format!("comparison-p{}-{}", parallel, uuid::Uuid::new_v4()),
+        name: format!("parallel {parallel}"),
+        base_url: format!("http://127.0.0.1:{port}"),
+        config_path: fixture
+            .state
+            .data_dir
+            .join(format!("comparison-p{parallel}.json"))
+            .to_string_lossy()
+            .into(),
+        ..fixture.profile.clone()
+    };
+    fs::write(&candidate.config_path, serde_json::to_vec(&config).unwrap()).unwrap();
+    fixture
+        .state
+        .database
+        .lock()
+        .unwrap()
+        .execute(
+            "INSERT INTO local_installations VALUES(?1,?2,?3,?4)",
+            rusqlite::params![
+                candidate.id,
+                serde_json::to_string(&candidate).unwrap(),
+                serde_json::to_string(&candidate).unwrap(),
+                now() as i64
+            ],
+        )
+        .unwrap();
+    candidate
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn concurrency_comparison_switches_same_port_owned_profiles_then_restores_base() {
+    let fixture = Fixture::new_without_tuning_job();
+    let state = fixture.state.clone();
+    let base = fixture.profile.clone();
+    let p4 = register_switch_candidate(&fixture, fixture.port, 4);
+    let p5 = register_switch_candidate(&fixture, fixture.port, 5);
+    let plan = prepare_startup(&base, &state.processes, &state.tasks).unwrap();
+    start_prepared_service(&state, base.clone(), plan, None).unwrap();
+    wait_port(fixture.port).await;
+
+    for candidate in [&p4, &p5, &base] {
+        let status = state
+            .clone()
+            .switch_local_service(candidate.id.clone())
+            .await
+            .unwrap_or_else(|error| panic!("same-port owned switch to {} failed: {error}", candidate.id));
+        assert!(status.running && status.owned);
+        assert!(accepts(fixture.port));
+        let processes = state.processes.lock().unwrap();
+        assert!(processes[&candidate.id].status.running);
+        #[cfg(windows)]
+        assert!(external::listener_ids(candidate)
+            .unwrap()
+            .iter()
+            .all(|pid| processes[&candidate.id].owns_pid(*pid).unwrap()));
+    }
+    assert_eq!(
+        state.registered_profile(&base.id).unwrap().config_path,
+        base.config_path
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn concurrency_comparison_rejects_foreign_port_before_stopping_owned_model() {
+    let fixture = Fixture::new_without_tuning_job();
+    let state = fixture.state.clone();
+    let base = fixture.profile.clone();
+    let (other_id, occupied_port, other_pid) = fixture.unrelated_listener(false).await;
+    let target = register_switch_candidate(&fixture, occupied_port, 4);
+    let plan = prepare_startup(&base, &state.processes, &state.tasks).unwrap();
+    start_prepared_service(&state, base.clone(), plan, None).unwrap();
+    wait_port(fixture.port).await;
+    assert!(state
+        .clone()
+        .switch_local_service(target.id)
+        .await
+        .is_err());
+    assert!(accepts(fixture.port), "original owned service must survive");
+    assert!(state.processes.lock().unwrap()[&base.id].status.running);
+    fixture.assert_unrelated(&other_id, occupied_port, other_pid);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
