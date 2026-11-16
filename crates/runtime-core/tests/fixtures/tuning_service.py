@@ -110,7 +110,11 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         global loaded, active, counter
         request_id = str(time.time_ns())
-        admitted = journal.admit(request_id, self.headers.get("X-Strata-Manager-Tuning-Id"))
+        admitted = journal.admit(
+            request_id,
+            self.headers.get("X-Strata-Manager-Maintenance-Token")
+            or self.headers.get("X-Strata-Manager-Tuning-Id"),
+        )
         try:
             body = self.rfile.read(int(self.headers.get("Content-Length", 0)))
             if admitted is False:
