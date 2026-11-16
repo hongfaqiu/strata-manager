@@ -264,6 +264,26 @@ describe('complete graphical and JSON startup configuration', () => {
     expect(custom.updated).toBe(false);
     expect(startupArgsOf(custom.config)).toEqual(['--custom-rep', 'a', '--custom-rep', 'b']);
   });
+  it('supports --draft, --draft-model and --draft-conf as known 1-operand flags in full argument configuration (#229)', () => {
+    expect(STARTUP_ENGINE_FLAGS['--draft']).toBe(1);
+    expect(STARTUP_ENGINE_FLAGS['--draft-model']).toBe(1);
+    expect(STARTUP_ENGINE_FLAGS['--draft-conf']).toBe(1);
+
+    expect(() => validateStartupConfiguration({ args: ['--draft'] })).toThrow('--draft');
+    expect(() => validateStartupConfiguration({ args: ['--draft-model'] })).toThrow('--draft-model');
+    expect(() => validateStartupConfiguration({ args: ['--draft-conf'] })).toThrow('--draft-conf');
+    expect(() => validateStartupConfiguration({ args: ['--native', 'm.gguf', '--draft', 'dflash2', '--draft-model', '/d/pack', '--draft-conf', '0.5'] })).not.toThrow();
+
+    const added = addStartupArgument({ args: ['--native', 'm.gguf'] }, ['--draft', 'dflash2']);
+    expect(added.updated).toBe(false);
+    expect(startupArgumentRows(added.config)).toEqual([
+      { offset: 0, tokens: ['--native', 'm.gguf'], known: true, arity: 1 },
+      { offset: 2, tokens: ['--draft', 'dflash2'], known: true, arity: 1 },
+    ]);
+    const updated = addStartupArgument(added.config, ['--draft', 'mtp']);
+    expect(updated.updated).toBe(true);
+    expect(startupArgsOf(updated.config)).toEqual(['--native', 'm.gguf', '--draft', 'mtp']);
+  });
 });
 
 describe('network and GPU power startup settings', () => {
