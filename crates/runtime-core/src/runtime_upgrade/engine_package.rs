@@ -425,6 +425,27 @@ pub fn is_official_download_url(url: &str, name: &str) -> bool {
     parse_official_download_url(url).is_some_and(|location| location.name == name)
 }
 
+/// Whether cached installation metadata may reuse this official asset URL.
+///
+/// Component engine / dsv41 archives may be hosted on an older official tag
+/// (the v0.2.15 feed serves 0.1.60 engines from v0.2.14, and dsv41 from
+/// v0.2.13). Legacy ZIPs were only published on the advertised app release,
+/// so a tag that does not match `release_version` is treated as a corrupted
+/// cache rather than a cross-release package.
+pub fn is_reusable_official_asset_url(url: &str, name: &str, release_version: &str) -> bool {
+    let Some(location) = parse_official_download_url(url) else {
+        return false;
+    };
+    if location.name != name {
+        return false;
+    }
+    if legacy_variant(name).is_some() {
+        location.tag == format!("v{release_version}") || location.tag == release_version
+    } else {
+        true
+    }
+}
+
 /// Resolve a signed feed `url` field: a bare package name on `current_tag`, or an official
 /// absolute GitHub Release URL (possibly on an older tag).
 pub fn feed_package_location(url: &str, current_tag: &str) -> Option<OfficialDownload> {
@@ -1520,6 +1541,52 @@ mod tests {
                 "accepted unsafe url: {url}"
             );
         }
+    }
+
+    #[test]
+    fn cached_official_asset_urls_allow_cross_release_component_packages_only() {
+        let engine = "https://github.com/Niko1221/Strata/releases/download/v0.2.14/strata-engine-0.1.60-windows-x86_64-cuda-cuda13.tar.gz";
+        let engine_name = "strata-engine-0.1.60-windows-x86_64-cuda-cuda13.tar.gz";
+        assert!(is_reusable_official_asset_url(
+            engine,
+            engine_name,
+            "0.2.15"
+        ));
+        assert!(is_reusable_official_asset_url(
+            engine,
+            engine_name,
+            "0.2.14"
+        ));
+        assert!(!is_reusable_official_asset_url(
+            engine,
+            "strata-engine-0.1.60-linux-x86_64-cuda-cuda13.tar.gz",
+            "0.2.15"
+        ));
+        assert!(!is_reusable_official_asset_url(
+            "https://example.org/strata-engine-0.1.60-windows-x86_64-cuda-cuda13.tar.gz",
+            engine_name,
+            "0.2.15"
+        ));
+        assert!(!is_reusable_official_asset_url(
+            "https://github.com/evil/Strata/releases/download/v0.2.14/strata-engine-0.1.60-windows-x86_64-cuda-cuda13.tar.gz",
+            engine_name,
+            "0.2.15"
+        ));
+
+        let zip =
+            "https://github.com/Niko1221/Strata/releases/download/v0.1.42/strata-windows-x64.zip";
+        let zip_name = "strata-windows-x64.zip";
+        assert!(is_reusable_official_asset_url(zip, zip_name, "0.1.42"));
+        assert!(!is_reusable_official_asset_url(
+            zip,
+            zip_name,
+            "0.1.42-preview"
+        ));
+        assert!(!is_reusable_official_asset_url(
+            "https://github.com/Niko1221/Strata/releases/download/v0.1.41/strata-windows-x64.zip",
+            zip_name,
+            "0.1.42"
+        ));
     }
 
     #[test]

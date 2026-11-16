@@ -283,7 +283,7 @@ fn cached_installation_metadata(cached: Value, checked_now: u64) -> Option<Runti
                 && asset.sha256.len() == 64
                 && asset.sha256.bytes().all(|b| b.is_ascii_hexdigit())
                 && asset.sha256 == asset.sha256.to_ascii_lowercase()
-                && engine_package::is_official_download_url(&asset.url, &asset.name)
+                && engine_package::is_reusable_official_asset_url(&asset.url, &asset.name, version)
         })
     {
         return None;
@@ -2785,6 +2785,59 @@ mod tests {
                 "accepted non-normalized cached field {pointer}"
             );
         }
+    }
+
+    fn official_engine_asset(platform: &str) -> RuntimeReleaseAsset {
+        let name = format!("strata-engine-0.1.60-{platform}-cuda-cuda13.tar.gz");
+        RuntimeReleaseAsset {
+            name: name.clone(),
+            url: engine_package::official_download_url("v0.2.14", &name),
+            size: 1024,
+            sha256: "a".repeat(64),
+            variant: "cuda13".into(),
+            engine_version: Some("0.1.60".into()),
+            manifest_sha256: Some("b".repeat(64)),
+            installed_bytes: Some(2048),
+            archs: Vec::new(),
+            nvidia_min_driver: None,
+            match_reason: None,
+        }
+    }
+
+    #[test]
+    fn installation_metadata_reuses_cross_release_official_engine_packages() {
+        let checked_now = 2 * INSTALLATION_METADATA_MAX_AGE;
+        let mut info = installation_metadata_fixture(checked_now);
+        info.latest_version = Some("0.2.15".into());
+        info.assets = vec![
+            official_engine_asset("windows-x86_64"),
+            official_engine_asset("linux-x86_64"),
+        ];
+        info.installable = true;
+        let cached = serde_json::to_value(&info).unwrap();
+        assert_eq!(
+            cached_installation_metadata(cached.clone(), checked_now).is_some(),
+            cfg!(target_arch = "x86_64") && matches!(std::env::consts::OS, "windows" | "linux"),
+            "cross-release official engine URLs should reuse on Windows/Linux hosts"
+        );
+
+        let mut wrong_name = cached.clone();
+        wrong_name["assets"][0]["url"] = json!(
+            "https://github.com/Niko1221/Strata/releases/download/v0.2.14/strata-engine-0.1.60-linux-x86_64-cuda-cuda13.tar.gz"
+        );
+        assert!(
+            cached_installation_metadata(wrong_name, checked_now).is_none(),
+            "accepted a URL whose official filename does not match the asset"
+        );
+
+        let mut foreign = cached;
+        foreign["assets"][0]["url"] = json!(
+            "https://github.com/evil/Strata/releases/download/v0.2.14/strata-engine-0.1.60-windows-x86_64-cuda-cuda13.tar.gz"
+        );
+        assert!(
+            cached_installation_metadata(foreign, checked_now).is_none(),
+            "accepted a cross-repository official-looking URL"
+        );
     }
 
     #[cfg(all(windows, target_arch = "x86_64"))]
