@@ -562,19 +562,23 @@ impl Default for ModeStatus {
     }
 }
 
+#[cfg(any(windows, test))]
 const MAX_TASKBAR_AUTO_RETRIES: u32 = 8;
 
 /// Seconds to wait before remount attempt `attempt` (1-based). Caps at 30s.
+#[cfg(any(windows, test))]
 pub(crate) fn retry_backoff_secs(attempt: u32) -> u64 {
     const STEPS: [u64; 5] = [2, 4, 8, 15, 30];
     STEPS[(attempt.saturating_sub(1) as usize).min(STEPS.len() - 1)]
 }
 
 /// Auto-remount is bounded so a persistent attach failure stays visible.
+#[cfg(any(windows, test))]
 pub(crate) fn should_auto_retry(suppress: bool, attempt: u32) -> bool {
     !suppress && (1..=MAX_TASKBAR_AUTO_RETRIES).contains(&attempt)
 }
 
+#[cfg(any(windows, test))]
 fn retry_wait_message(reason: &str, attempt: u32, delay_secs: u64, english: bool) -> String {
     if english {
         format!(
@@ -587,6 +591,7 @@ fn retry_wait_message(reason: &str, attempt: u32, delay_secs: u64, english: bool
     }
 }
 
+#[cfg(any(windows, test))]
 fn retry_paused_message(reason: &str, english: bool) -> String {
     if english {
         format!(
@@ -607,6 +612,7 @@ fn localized(english: bool, chinese: &str, english_text: &str) -> String {
     }
 }
 
+#[cfg(any(windows, test))]
 fn helper_start_failed_reason(error: &impl ToString, english: bool) -> String {
     let error = error.to_string();
     if english {
@@ -616,6 +622,7 @@ fn helper_start_failed_reason(error: &impl ToString, english: bool) -> String {
     }
 }
 
+#[cfg(any(windows, test))]
 fn restore_failed_reason(error: &str, english: bool) -> String {
     if english {
         format!("Taskbar monitor recovery failed: {error}")
@@ -624,6 +631,7 @@ fn restore_failed_reason(error: &str, english: bool) -> String {
     }
 }
 
+#[cfg(any(windows, test))]
 fn unexpected_detach_reason(english: bool) -> String {
     localized(
         english,
@@ -632,6 +640,7 @@ fn unexpected_detach_reason(english: bool) -> String {
     )
 }
 
+#[cfg(any(windows, test))]
 fn first_frame_timeout_reason(english: bool) -> String {
     localized(
         english,
@@ -640,6 +649,7 @@ fn first_frame_timeout_reason(english: bool) -> String {
     )
 }
 
+#[cfg(any(windows, test))]
 fn helper_disconnected_reason(english: bool) -> String {
     localized(
         english,
@@ -657,6 +667,7 @@ struct Inner {
     last_preferences: Option<Preferences>,
     /// Set by an explicit user close, a switch to the strip, or app shutdown.
     suppress_retry: bool,
+    #[cfg(windows)]
     retry_attempts: u32,
     retry_generation: u64,
 }
@@ -739,6 +750,7 @@ fn suppress_taskbar_retries(app: &AppHandle) {
     }
 }
 
+#[cfg(windows)]
 fn allow_taskbar_retries(app: &AppHandle) {
     if let Ok(mut inner) = app.state::<TaskbarMonitorState>().inner.lock() {
         inner.suppress_retry = false;
@@ -747,6 +759,7 @@ fn allow_taskbar_retries(app: &AppHandle) {
     }
 }
 
+#[cfg(windows)]
 fn emit_taskbar_notice(app: &AppHandle, message: &str) {
     let _ = app.emit_to("main", "monitor-taskbar-notice", message);
 }
@@ -827,11 +840,6 @@ fn after_unintentional_stop(app: &AppHandle, reason: &str) {
             after_unintentional_stop(&app, &error);
         }
     });
-}
-
-#[cfg(not(windows))]
-fn after_unintentional_stop(app: &AppHandle, reason: &str) {
-    stop(app, failure_message(reason, false));
 }
 
 /// Window destruction/tray hiding only updates presentation state. It must
@@ -1389,6 +1397,7 @@ fn current(app: &AppHandle, session: &Session) -> bool {
 
 /// Status text when the taskbar host stops. Only an explicit "switch to the
 /// desktop strip" (`shown`) brings the strip up; failures just stop.
+#[cfg(any(windows, test))]
 fn failure_message(reason: &str, shown: bool) -> String {
     if shown {
         format!("已回到桌面浮条：{reason}")

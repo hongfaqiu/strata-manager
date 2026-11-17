@@ -36,13 +36,9 @@ impl Sampler {
             }
         }
         self.system.refresh_cpu_usage();
-        if self.last.is_none() {
-            self.last = Some(now);
-            self.last_value = None;
-            return None;
-        }
+        let primed = self.last.is_some();
         self.last = Some(now);
-        self.last_value = interpret_cpu_usage(self.system.global_cpu_usage());
+        self.last_value = first_or_measured(primed, self.system.global_cpu_usage());
         self.last_value
     }
 }

@@ -777,6 +777,7 @@ fn widget_preview_export() {
         gpu: Some(9.0),
         vram_used: Some(19.8),
         vram_total: Some(24.0),
+        cpu: Some(12.0),
         temperature: Some(44.0),
         context_used: Some(3_900.0),
         context_total: Some(32_768.0),
@@ -1206,16 +1207,16 @@ fn cpu_is_an_optional_item_and_keeps_a_measured_zero() {
         state: "未启动",
         ..Reading::default()
     };
-    let layout = layout(&prefs, false, 96, 48, &zero, &palette);
-    assert!(texts(&layout).contains(&"0"));
+    let zero_layout = layout(&prefs, false, 96, 48, &zero, &palette);
+    assert!(texts(&zero_layout).contains(&"0"));
     let unknown = Reading {
         cpu: None,
         tone: Tone::Stopped,
         state: "未启动",
         ..Reading::default()
     };
-    let layout = layout(&prefs, false, 96, 48, &unknown, &palette);
-    assert!(texts(&layout).iter().any(|text| *text == DASH));
+    let unknown_layout = layout(&prefs, false, 96, 48, &unknown, &palette);
+    assert!(texts(&unknown_layout).iter().any(|text| *text == DASH));
     assert_eq!(item_menu_label("cpu", false), "CPU 占用");
     assert_eq!(item_menu_label("cpu", true), "CPU usage");
 }
