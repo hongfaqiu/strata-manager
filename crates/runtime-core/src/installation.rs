@@ -931,6 +931,23 @@ pub(crate) async fn download_release(
     download_with_client(state, id, url, expected, limit, &client).await
 }
 
+fn release_redirect_allowed(url: &url::Url) -> bool {
+    url.scheme() == "https"
+        && url.username().is_empty()
+        && url.password().is_none()
+        && matches!(
+            url.host_str(),
+            Some(
+                "github.com"
+                    // GitHub's source archives (the official same-commit ZIP 302s
+                    // from github.com/…/archive/<rev>.zip onto codeload).
+                    | "codeload.github.com"
+                    | "release-assets.githubusercontent.com"
+                    | "objects.githubusercontent.com"
+            )
+        )
+}
+
 fn release_client() -> Result<reqwest::Client, String> {
     reqwest::Client::builder()
         .connect_timeout(Duration::from_secs(10))
@@ -938,18 +955,7 @@ fn release_client() -> Result<reqwest::Client, String> {
             if attempt.previous().len() >= 5 {
                 return attempt.error("release redirect limit exceeded");
             }
-            if attempt.url().scheme() == "https"
-                && matches!(
-                    attempt.url().host_str(),
-                    Some(
-                        "github.com"
-                            // GitHub's source archives (llama.cpp for setup.py's step 4)
-                            | "codeload.github.com"
-                            | "release-assets.githubusercontent.com"
-                            | "objects.githubusercontent.com"
-                    )
-                )
-            {
+            if release_redirect_allowed(attempt.url()) {
                 attempt.follow()
             } else {
                 attempt.error("release redirect origin refused")
@@ -1004,6 +1010,30 @@ pub(crate) async fn download_using_client(
     client: &reqwest::Client,
 ) -> Result<PathBuf, String> {
     download_with_client(state, id, url, expected, limit, client).await
+}
+
+/// Official files that have no published SHA-256 (the same-revision source ZIP).
+/// The caller is responsible for identity checks after the transfer completes.
+pub(crate) async fn download_release_unsigned(
+    state: &RuntimeState,
+    id: &str,
+    url: &str,
+    key: &str,
+    limit: u64,
+) -> Result<PathBuf, String> {
+    let client = release_client()?;
+    download::download_with_client_unsigned(state, id, url, key, limit, &client, None).await
+}
+
+pub(crate) async fn download_using_client_unsigned(
+    state: &RuntimeState,
+    id: &str,
+    url: &str,
+    key: &str,
+    limit: u64,
+    client: &reqwest::Client,
+) -> Result<PathBuf, String> {
+    download::download_with_client_unsigned(state, id, url, key, limit, client, None).await
 }
 
 fn safe_entry(name: &str, prefix: &str) -> Result<Option<PathBuf>, String> {
@@ -1750,6 +1780,24 @@ async fn ensure_metal_engine(
 mod tests {
     use super::*;
     use std::io::Cursor;
+
+    #[test]
+    fn release_redirects_follow_github_archive_and_codeload() {
+        let allowed = |value: &str| release_redirect_allowed(&url::Url::parse(value).unwrap());
+        assert!(allowed(
+            "https://github.com/Niko1221/Strata/archive/c77572806996349b49995e4f98d41b5294d36a21.zip"
+        ));
+        assert!(allowed(
+            "https://codeload.github.com/Niko1221/Strata/zip/c77572806996349b49995e4f98d41b5294d36a21"
+        ));
+        assert!(!allowed(
+            "http://codeload.github.com/Niko1221/Strata/zip/c77572806996349b49995e4f98d41b5294d36a21"
+        ));
+        assert!(!allowed("https://evil.example/archive.zip"));
+        assert!(!allowed(
+            "https://user:pass@github.com/Niko1221/Strata/archive/abc.zip"
+        ));
+    }
 
     #[test]
     fn invalidating_discovery_drops_the_list_cached_before_an_update() {

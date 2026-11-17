@@ -120,6 +120,7 @@ pub(super) async fn engine_archive(
     asset: &RuntimeReleaseAsset,
     options: &RuntimeZipDownloadOptions,
     work: &Path,
+    new_install: bool,
 ) -> Result<PathBuf, String> {
     if let Some(path) = &options.local_archive_path {
         return import_archive(
@@ -186,6 +187,18 @@ pub(super) async fn engine_archive(
             state,
             id,
             &super::super::download_route::Choice::Auto,
+            ("引擎包", "engine package"),
+            &asset.url,
+            &asset.sha256,
+            asset.size,
+        )
+        .await?
+        .0
+    } else if new_install && !options.is_custom() {
+        // First installs now honor the saved 「下载来源」 setting, including auto.
+        super::super::download_route::download(
+            state,
+            id,
             ("引擎包", "engine package"),
             &asset.url,
             &asset.sha256,
@@ -468,7 +481,7 @@ mod tests {
             source: None,
             source_only: false,
         };
-        let staged = engine_archive(&state, &id, &asset(bytes), &options, temp.path())
+        let staged = engine_archive(&state, &id, &asset(bytes), &options, temp.path(), true)
             .await
             .unwrap();
         assert_eq!(std::fs::read(&staged).unwrap(), bytes);

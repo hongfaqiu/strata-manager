@@ -1,8 +1,9 @@
-//! Which host serves a GitHub release file (engine packages, the llama.cpp source archive).
-//! Default and "auto": a short speed test of the built-in mirrors and GitHub picks the fastest,
-//! the other mirrors follow and GitHub is the last resort unless it won. A saved fixed mirror
-//! keeps its order (that mirror, then GitHub); "official" means GitHub only. Only the transport
-//! changes: every file is still held to its official size and SHA-256.
+//! Which host serves a GitHub release file (engine packages, the llama.cpp source archive)
+//! or the official same-revision Strata source ZIP (no published SHA-256; the caller checks
+//! identity). Default and "auto": a short speed test of the built-in mirrors and GitHub picks
+//! the fastest, the other mirrors follow and GitHub is the last resort unless it won. A saved
+//! fixed mirror keeps its order (that mirror, then GitHub); "official" means GitHub only. For
+//! digest-published files the official size and SHA-256 still apply whichever host serves them.
 use crate::{installation, processes, RuntimeState};
 use futures_util::future::join_all;
 use serde_json::Value;
@@ -61,6 +62,52 @@ pub fn saved_choice(state: &RuntimeState) -> Choice {
     crate::store_get(state, super::github_source::PREFERENCES_KEY.into())
         .map(|value| choice(&value))
         .unwrap_or(Choice::Auto)
+}
+
+/// Reconstruct a `{url}` wrapper from a concrete mirrored engine-package URL.
+pub fn choice_from_wrapped_url(url: &str) -> Option<Choice> {
+    for (id, _, prefix) in MIRRORS {
+        if url.starts_with(prefix) {
+            return Some(Choice::Mirror(id));
+        }
+    }
+    for official in ["https://github.com/", "https://codeload.github.com/"] {
+        if let Some(index) = url.find(official) {
+            let prefix = &url[..index];
+            if index > 0
+                && prefix.starts_with("https://")
+                && !prefix.contains(['?', '#', '{', '}'])
+                && url::Url::parse(prefix).is_ok()
+            {
+                return Some(Choice::Custom(format!("{prefix}{{url}}")));
+            }
+        }
+    }
+    None
+}
+
+/// The route for a release-install or update task. First installs read the saved
+/// 「下载来源」 setting; an update keeps the dialog's explicit choice (`auto`, a
+/// mirrored engine URL, or official-only).
+pub fn choice_for_zip_task(
+    state: &RuntimeState,
+    source: Option<&str>,
+    download_url: Option<&str>,
+    new_install: bool,
+) -> Choice {
+    if source == Some("auto") {
+        return Choice::Auto;
+    }
+    if let Some(url) = download_url {
+        if let Some(choice) = choice_from_wrapped_url(url) {
+            return choice;
+        }
+    }
+    if new_install {
+        saved_choice(state)
+    } else {
+        Choice::Official
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -351,6 +398,65 @@ pub async fn download_with(
     Err(format!("没能下载{}。{}", what.0, failures.join("；")))
 }
 
+/// Like [`download_with`], for official files that have no published SHA-256.
+/// Partial files are kept under `key`; the caller checks identity.
+pub async fn download_unsigned(
+    state: &RuntimeState,
+    id: &str,
+    choice: &Choice,
+    what: (&str, &str),
+    official: &str,
+    key: &str,
+    limit: u64,
+) -> Result<(PathBuf, String), String> {
+    let (order, automatic) = plan(state, id, choice, official).await;
+    let mut failures = Vec::new();
+    for (index, source) in order.iter().enumerate() {
+        installation::cancelled(state, id)?;
+        let (why_zh, why_en) = reason(index, automatic);
+        installation::progress(
+            state,
+            id,
+            format!(
+                "下载来源：{}（{why_zh}）· {} / Download source: {} ({why_en}) · {}",
+                source.label, what.0, source.label, what.1
+            ),
+        )?;
+        let result = if source.is_official() {
+            installation::download_release_unsigned(state, id, official, key, limit).await
+        } else {
+            match mirror_client() {
+                Ok(client) => {
+                    installation::download_using_client_unsigned(
+                        state,
+                        id,
+                        &source.url(official),
+                        key,
+                        limit,
+                        &client,
+                    )
+                    .await
+                }
+                Err(error) => Err(error),
+            }
+        };
+        match result {
+            Ok(file) => return Ok((file, source.label.clone())),
+            Err(error) => {
+                installation::cancelled(state, id)?;
+                processes::log(
+                    &state.logs,
+                    id,
+                    "warn",
+                    format!("{} 下载{}未完成：{error}", source.label, what.0),
+                );
+                failures.push(format!("{}：{error}", source.label));
+            }
+        }
+    }
+    Err(format!("没能下载{}。{}", what.0, failures.join("；")))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -444,5 +550,60 @@ mod tests {
         );
         assert_eq!(reason(0, true), ("测速最快", "fastest"));
         assert_eq!(reason(1, true), ("备用来源", "fallback"));
+    }
+
+    #[test]
+    fn wrapped_engine_urls_recover_the_same_route_used_for_source_archives() {
+        let official = "https://github.com/Niko1221/Strata/releases/download/v0.2.15/engine.tar.gz";
+        assert_eq!(
+            choice_from_wrapped_url(&format!("https://gh-proxy.org/{official}")),
+            Some(Choice::Mirror("gh-proxy"))
+        );
+        assert_eq!(
+            choice_from_wrapped_url(&format!("https://ghproxy.net/{official}")),
+            Some(Choice::Mirror("ghproxy"))
+        );
+        assert_eq!(
+            choice_from_wrapped_url(&format!("https://m.example/{official}")),
+            Some(Choice::Custom("https://m.example/{url}".into()))
+        );
+        assert_eq!(choice_from_wrapped_url(official), None);
+    }
+
+    #[test]
+    fn zip_task_choice_uses_saved_preferences_on_first_install() {
+        let temp = tempfile::tempdir().unwrap();
+        let state = crate::RuntimeState::open(temp.path().join("data")).unwrap();
+        assert_eq!(choice_for_zip_task(&state, None, None, true), Choice::Auto);
+        assert_eq!(
+            choice_for_zip_task(&state, None, None, false),
+            Choice::Official
+        );
+        crate::store_set(
+            &state,
+            super::super::github_source::PREFERENCES_KEY.into(),
+            json!({"mode": "mirror", "sourceId": "gh-proxy"}),
+        )
+        .unwrap();
+        assert_eq!(
+            choice_for_zip_task(&state, None, None, true),
+            Choice::Mirror("gh-proxy")
+        );
+        // An update that picked official stays official-only even if the saved
+        // setting is a mirror.
+        assert_eq!(
+            choice_for_zip_task(&state, None, None, false),
+            Choice::Official
+        );
+        assert_eq!(
+            choice_for_zip_task(&state, Some("auto"), None, false),
+            Choice::Auto
+        );
+        let engine =
+            "https://ghproxy.net/https://github.com/Niko1221/Strata/releases/download/v0.2.15/a.tar.gz";
+        assert_eq!(
+            choice_for_zip_task(&state, None, Some(engine), false),
+            Choice::Mirror("ghproxy")
+        );
     }
 }
