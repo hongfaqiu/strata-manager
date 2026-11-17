@@ -897,7 +897,8 @@ pub(crate) async fn move_monitor_to_taskbar(
     }
     #[cfg(not(windows))]
     {
-        let english = Preferences::normalize(&preferences).english;
+        // Preferences itself is Windows/test-only; language is still on this value.
+        let english = crate::system_locale::uses_english_fallback(preferences["language"].as_str());
         let _ = app;
         Err(localized(
             english,
@@ -1388,7 +1389,6 @@ fn current(app: &AppHandle, session: &Session) -> bool {
 
 /// Status text when the taskbar host stops. Only an explicit "switch to the
 /// desktop strip" (`shown`) brings the strip up; failures just stop.
-#[cfg(any(windows, test))]
 fn failure_message(reason: &str, shown: bool) -> String {
     if shown {
         format!("已回到桌面浮条：{reason}")
