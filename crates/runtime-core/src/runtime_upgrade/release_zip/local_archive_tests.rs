@@ -1,6 +1,7 @@
 //! First-run installation from already-downloaded archives (Windows release flow).
 use super::*;
 use crate::processes::TaskRecord;
+use sha2::{Digest, Sha256};
 use std::io::Cursor;
 
 const REVISION: &str = "0123456789abcdef0123456789abcdef01234567";

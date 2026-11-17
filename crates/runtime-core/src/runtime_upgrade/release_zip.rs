@@ -5,11 +5,9 @@ use super::{
     UpgradeFlag,
 };
 use crate::{http, installation, maintenance, processes, storage, types::*, RuntimeState};
-use futures_util::StreamExt;
 use rusqlite::params;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use sha2::{Digest, Sha256};
 use std::{
     collections::HashSet,
     fs::{self, File},
@@ -34,6 +32,8 @@ pub(super) mod engine_trial;
 mod local_archive_tests;
 #[cfg(test)]
 mod package_tests;
+#[cfg(test)]
+mod source_archive_tests;
 pub use download_check::{
     resolve_release_download_asset, resolve_release_download_asset_for, test_release_download,
     RuntimeZipDownloadCheckResult,
@@ -907,63 +907,145 @@ fn prevent_downgrade(root: &Path, version: &str) -> Result<(), String> {
     }
     Ok(())
 }
-async fn source_archive(
-    state: &RuntimeState,
-    id: &str,
-    url: &str,
-    revision: &str,
-) -> Result<PathBuf, String> {
-    if !super::valid_revision(revision)
-        || url != format!("https://codeload.github.com/Niko1221/Strata/zip/{revision}")
-    {
+fn official_source_archive_url(url: &str, revision: &str) -> Result<String, String> {
+    if !super::valid_revision(revision) {
         return Err("官方源码URL或提交无效".into());
     }
-    let directory = installation::owned_directory(state.data_dir(), &["downloads"])?;
-    let mut output = tempfile::NamedTempFile::new_in(&directory).map_err(|e| e.to_string())?;
-    let client = reqwest::Client::builder()
-        .connect_timeout(Duration::from_secs(10))
-        .redirect(reqwest::redirect::Policy::none())
-        .build()
-        .map_err(|e| e.to_string())?;
-    let response = client
-        .get(url)
-        .timeout(Duration::from_secs(300))
-        .send()
-        .await
-        .map_err(|e| format!("官方源码下载失败：{e}"))?
-        .error_for_status()
-        .map_err(|e| e.to_string())?;
-    if response.content_length().is_some_and(|n| n > MAX_SOURCE) {
-        return Err("源码ZIP超过安全上限".into());
+    let canonical = format!("https://codeload.github.com/Niko1221/Strata/zip/{revision}");
+    // github.com/…/archive/<rev>.zip 302s onto this same codeload URL. Mirrors wrap
+    // the canonical address so they do not have to follow that redirect themselves.
+    let github = format!("https://github.com/Niko1221/Strata/archive/{revision}.zip");
+    if url == canonical || url == github {
+        Ok(canonical)
+    } else {
+        Err("官方源码URL或提交无效".into())
     }
-    let mut stream = response.bytes_stream();
-    let mut received = 0u64;
-    let mut hash = Sha256::new();
-    let mut at = Instant::now();
-    let mut at_received = 0u64;
-    loop {
-        cancelled(state, id)?;
-        tokio::select! {
-            bytes=stream.next()=>{let Some(bytes)=bytes else{break};let bytes=bytes.map_err(|e|e.to_string())?;received=received.checked_add(bytes.len() as u64).ok_or("源码体积无效")?;if received>MAX_SOURCE{return Err("源码ZIP超过安全上限".into());}hash.update(&bytes);output.write_all(&bytes).map_err(|e|e.to_string())?;
-                if at.elapsed()>Duration::from_secs(1){let speed=(received-at_received) as f64/at.elapsed().as_secs_f64();processes::log(&state.logs,id,"info",format!("官方同版本源码已下载 {}",crate::byte_size::progress_amount(received,None,Some(speed)).replace(" / 总量未知","")));at=Instant::now();at_received=received;}}
-            _=tokio::time::sleep(Duration::from_millis(100))=>{}
+}
+
+fn cached_source_archive(
+    directory: &Path,
+    revision: &str,
+    version: &str,
+) -> Result<Option<PathBuf>, String> {
+    let prefix = format!("source-{revision}-");
+    let entries = match fs::read_dir(directory) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(error.to_string()),
+    };
+    for entry in entries {
+        let entry = entry.map_err(|error| error.to_string())?;
+        let name = entry.file_name();
+        let Some(digest) = name
+            .to_str()
+            .and_then(|name| name.strip_prefix(&prefix))
+            .and_then(|name| name.strip_suffix(".zip"))
+        else {
+            continue;
+        };
+        if digest.len() != 64 || !digest.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+            continue;
+        }
+        let path = entry.path();
+        if installation::file_hash(&path)? != digest {
+            continue;
+        }
+        if source_archive_revision(&path, revision, version).is_ok() {
+            return Ok(Some(path));
         }
     }
-    cancelled(state, id)?;
-    output.as_file().sync_all().map_err(|e| e.to_string())?;
-    let digest = format!("{:x}", hash.finalize());
+    Ok(None)
+}
+
+fn publish_source_archive(
+    state: &RuntimeState,
+    id: &str,
+    archive: &Path,
+    label: &str,
+    revision: &str,
+    version: &str,
+) -> Result<PathBuf, String> {
+    if let Err(error) = source_archive_revision(archive, revision, version) {
+        let _ = fs::remove_file(archive);
+        return Err(error);
+    }
+    let digest = installation::file_hash(archive)?;
+    let directory = installation::owned_directory(state.data_dir(), &["downloads"])?;
     let target = directory.join(format!("source-{revision}-{digest}.zip"));
     if target.exists() {
         if installation::file_hash(&target)? != digest {
             return Err("已有源码缓存被修改".into());
         }
+        if archive != target {
+            let _ = fs::remove_file(archive);
+        }
         return Ok(target);
     }
-    output
-        .persist_noclobber(&target)
-        .map_err(|e| e.to_string())?;
-    processes::log(&state.logs,id,"info",format!("同版本源码来自官方HTTPS提交 {revision}；本地SHA256 {digest}（上游没有发布源码ZIP摘要）"));
+    match fs::hard_link(archive, &target) {
+        Ok(()) => {
+            if archive != target {
+                let _ = fs::remove_file(archive);
+            }
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+            if installation::file_hash(&target)? != digest {
+                return Err("已有源码缓存被修改".into());
+            }
+            if archive != target {
+                let _ = fs::remove_file(archive);
+            }
+        }
+        Err(error) => {
+            // Cross-device or filesystems without hard links: fall back to a rename
+            // when the downloaded file is already in the downloads directory.
+            if archive.parent() == Some(directory.as_path()) {
+                fs::rename(archive, &target).map_err(|e| e.to_string())?;
+            } else {
+                return Err(error.to_string());
+            }
+        }
+    }
+    processes::log(
+        &state.logs,
+        id,
+        "info",
+        format!(
+            "同版本源码来自 {label} HTTPS 提交 {revision}；本地SHA256 {digest}（上游没有发布源码ZIP摘要）"
+        ),
+    );
     Ok(target)
+}
+
+async fn source_archive(
+    state: &RuntimeState,
+    id: &str,
+    url: &str,
+    revision: &str,
+    version: &str,
+    choice: &super::download_route::Choice,
+) -> Result<PathBuf, String> {
+    let official = official_source_archive_url(url, revision)?;
+    let directory = installation::owned_directory(state.data_dir(), &["downloads"])?;
+    if let Some(cached) = cached_source_archive(&directory, revision, version)? {
+        processes::log(
+            &state.logs,
+            id,
+            "info",
+            format!("已复用官方同版本源码缓存 {}", cached.display()),
+        );
+        return Ok(cached);
+    }
+    let (archive, label) = super::download_route::download_unsigned(
+        state,
+        id,
+        choice,
+        ("官方同版本源码", "official source archive"),
+        &official,
+        &format!("source-{revision}"),
+        MAX_SOURCE,
+    )
+    .await?;
+    publish_source_archive(state, id, &archive, &label, revision, version)
 }
 
 /// The user's copy of the same-revision source ZIP. Upstream publishes no digest
@@ -2450,6 +2532,13 @@ async fn execute(state: Arc<RuntimeState>, j: &mut Journal) -> Result<String, St
                     .as_deref()
                     .ok_or("同版本源码地址缺失")?,
                 &revision,
+                &version,
+                &super::download_route::choice_for_zip_task(
+                    &state,
+                    j.download.source.as_deref(),
+                    j.download.download_url.as_deref(),
+                    j.new_install,
+                ),
             )
             .await?
         }
@@ -2483,9 +2572,15 @@ async fn execute(state: Arc<RuntimeState>, j: &mut Journal) -> Result<String, St
                     crate::byte_size::human_bytes(asset.size)
                 ),
             )?;
-            let engine =
-                download_source::engine_archive(&state, &j.task_id, asset, &j.download, &work)
-                    .await?;
+            let engine = download_source::engine_archive(
+                &state,
+                &j.task_id,
+                asset,
+                &j.download,
+                &work,
+                j.new_install,
+            )
+            .await?;
             if fs::metadata(&engine).map_err(|e| e.to_string())?.len() != asset.size {
                 return Err("官方引擎包精确长度与Release清单不符".into());
             }

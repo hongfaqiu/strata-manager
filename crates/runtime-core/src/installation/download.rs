@@ -176,8 +176,78 @@ async fn retry(
 fn publish(partial: &Path, cache: &Path) -> Result<(), String> {
     // hard_link is no-clobber on both Windows and Unix. The lock prevents other
     // application instances from using or deleting the partial while publishing.
-    fs::hard_link(partial, cache).map_err(|error| format!("保存已校验缓存失败: {error}"))?;
-    fs::remove_file(partial).map_err(|error| format!("清理已完成的续传文件失败: {error}"))
+    match fs::hard_link(partial, cache) {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+            if file_hash(partial)? != file_hash(cache)? {
+                return Err("保存已校验缓存失败: 目标已存在且内容不同".into());
+            }
+        }
+        Err(error) => return Err(format!("保存已校验缓存失败: {error}")),
+    }
+    match fs::remove_file(partial) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(format!("清理已完成的续传文件失败: {error}")),
+    }
+}
+
+/// Prefer the full reqwest/hyper chain so a mid-body timeout is not reduced to
+/// only "error decoding response body".
+fn format_error_chain(error: &dyn std::error::Error) -> String {
+    let mut message = error.to_string();
+    let mut current = error.source();
+    while let Some(source) = current {
+        let next = source.to_string();
+        if !next.is_empty() && !message.contains(&next) {
+            message.push_str(": ");
+            message.push_str(&next);
+        }
+        current = source.source();
+    }
+    message
+}
+
+enum Artifact {
+    /// Official SHA-256; cache and resume files are named after it.
+    Digest(String),
+    /// No published digest. `key` is a safe identifier such as `source-<revision>`.
+    Key(String),
+}
+
+impl Artifact {
+    fn digest(expected: &str) -> Result<Self, String> {
+        if expected.len() != 64 || !expected.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+            return Err("官方下载 SHA256 或安全体积上限无效".into());
+        }
+        Ok(Self::Digest(expected.to_ascii_lowercase()))
+    }
+
+    fn key(key: &str) -> Result<Self, String> {
+        if key.len() < 8
+            || key.len() > 80
+            || !key
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_')
+            || !key.contains('-')
+        {
+            return Err("官方下载缓存键无效".into());
+        }
+        Ok(Self::Key(key.to_owned()))
+    }
+
+    fn stem(&self) -> &str {
+        match self {
+            Self::Digest(value) | Self::Key(value) => value,
+        }
+    }
+
+    fn expected_hash(&self) -> Option<&str> {
+        match self {
+            Self::Digest(value) => Some(value),
+            Self::Key(_) => None,
+        }
+    }
 }
 
 pub(super) async fn download_with_client(
@@ -191,6 +261,27 @@ pub(super) async fn download_with_client(
     download_with_client_sized(state, id, url, expected, limit, client, None).await
 }
 
+pub(super) async fn download_with_client_unsigned(
+    state: &RuntimeState,
+    id: &str,
+    url: &str,
+    key: &str,
+    limit: u64,
+    client: &reqwest::Client,
+    size_hint: Option<u64>,
+) -> Result<PathBuf, String> {
+    download_artifact(
+        state,
+        id,
+        url,
+        Artifact::key(key)?,
+        limit,
+        client,
+        size_hint,
+    )
+    .await
+}
+
 pub(super) async fn download_with_client_sized(
     state: &RuntimeState,
     id: &str,
@@ -202,32 +293,54 @@ pub(super) async fn download_with_client_sized(
     // without a Content-Length (GitHub's source archives). Checks never rely on it.
     size_hint: Option<u64>,
 ) -> Result<PathBuf, String> {
-    if expected.len() != 64 || !expected.bytes().all(|byte| byte.is_ascii_hexdigit()) || limit == 0
-    {
+    download_artifact(
+        state,
+        id,
+        url,
+        Artifact::digest(expected)?,
+        limit,
+        client,
+        size_hint,
+    )
+    .await
+}
+
+async fn download_artifact(
+    state: &RuntimeState,
+    id: &str,
+    url: &str,
+    artifact: Artifact,
+    limit: u64,
+    client: &reqwest::Client,
+    size_hint: Option<u64>,
+) -> Result<PathBuf, String> {
+    if limit == 0 {
         return Err("官方下载 SHA256 或安全体积上限无效".into());
     }
-    let expected = expected.to_ascii_lowercase();
     cancelled(state, id)?;
     let directory = owned_directory(state.data_dir(), &["downloads"])?;
-    let _lock = download_lock(state, id, &directory.join(format!("{expected}.lock"))).await?;
-    let canonical = directory.join(format!("{expected}.download"));
-    let alternate = directory.join(format!("{expected}-verified.download"));
-    let mut cache = canonical.clone();
-    for candidate in [&canonical, &alternate] {
-        if let Some(metadata) = existing_regular_file(candidate)? {
-            if metadata.len() <= limit && file_hash(candidate)? == expected {
-                progress(state, id, "已复用经过 SHA256 校验的下载缓存")?;
-                return Ok(candidate.clone());
+    let stem = artifact.stem();
+    let _lock = download_lock(state, id, &directory.join(format!("{stem}.lock"))).await?;
+    let mut cache = directory.join(format!("{stem}.download"));
+    if let Some(expected) = artifact.expected_hash() {
+        let canonical = cache.clone();
+        let alternate = directory.join(format!("{expected}-verified.download"));
+        for candidate in [&canonical, &alternate] {
+            if let Some(metadata) = existing_regular_file(candidate)? {
+                if metadata.len() <= limit && file_hash(candidate)? == expected {
+                    progress(state, id, "已复用经过 SHA256 校验的下载缓存")?;
+                    return Ok(candidate.clone());
+                }
+                progress(state, id, "已有下载缓存校验不符，保留原文件并重新下载")?;
+                cache = if candidate == &canonical {
+                    alternate.clone()
+                } else {
+                    directory.join(format!("{expected}-{}.download", uuid::Uuid::new_v4()))
+                };
             }
-            progress(state, id, "已有下载缓存校验不符，保留原文件并重新下载")?;
-            cache = if candidate == &canonical {
-                alternate.clone()
-            } else {
-                directory.join(format!("{expected}-{}.download", uuid::Uuid::new_v4()))
-            };
         }
     }
-    let partial = directory.join(format!("{expected}.part"));
+    let partial = directory.join(format!("{stem}.part"));
     if existing_regular_file(&partial)?.is_some_and(|metadata| metadata.len() > limit) {
         return Err("已有续传文件超过安全体积上限，已拒绝安装".into());
     }
@@ -257,7 +370,14 @@ pub(super) async fn download_with_client_sized(
         let response = match cancellable_wait(state, id, request.send(), IDLE_TIMEOUT).await {
             Ok(Ok(response)) => response,
             Ok(Err(error)) => {
-                retry(state, id, attempt, received, &format!("请求失败: {error}")).await?;
+                retry(
+                    state,
+                    id,
+                    attempt,
+                    received,
+                    &format!("请求失败: {}", format_error_chain(&error)),
+                )
+                .await?;
                 continue;
             }
             Err(error) => {
@@ -281,7 +401,10 @@ pub(super) async fn download_with_client_sized(
             continue;
         }
         if status == StatusCode::RANGE_NOT_SATISFIABLE && received > 0 {
-            if file_hash(&partial)? == expected {
+            if artifact
+                .expected_hash()
+                .is_some_and(|expected| file_hash(&partial).is_ok_and(|digest| digest == expected))
+            {
                 output.sync_all().map_err(|error| error.to_string())?;
                 drop(output);
                 cancelled(state, id)?;
@@ -342,7 +465,9 @@ pub(super) async fn download_with_client_sized(
             };
             match next {
                 None => break None,
-                Some(Err(error)) => break Some(format!("下载中断: {error}")),
+                Some(Err(error)) => {
+                    break Some(format!("下载中断: {}", format_error_chain(&error)))
+                }
                 Some(Ok(bytes)) => {
                     let next_size = received
                         .checked_add(bytes.len() as u64)
@@ -383,10 +508,15 @@ pub(super) async fn download_with_client_sized(
             continue;
         }
         cancelled(state, id)?;
-        if file_hash(&partial)? != expected {
-            drop(output);
-            fs::remove_file(&partial).map_err(|error| error.to_string())?;
-            return Err("官方下载内容的 SHA256 不符，已删除续传文件并拒绝解包或执行".into());
+        let digest = file_hash(&partial)?;
+        if let Some(expected) = artifact.expected_hash() {
+            if digest != expected {
+                drop(output);
+                fs::remove_file(&partial).map_err(|error| error.to_string())?;
+                return Err("官方下载内容的 SHA256 不符，已删除续传文件并拒绝解包或执行".into());
+            }
+        } else {
+            cache = directory.join(format!("{stem}-{digest}.download"));
         }
         drop(output);
         cancelled(state, id)?;
@@ -395,7 +525,12 @@ pub(super) async fn download_with_client_sized(
             state,
             id,
             format!(
-                "SHA256 校验通过，共 {}",
+                "{}，共 {}",
+                if artifact.expected_hash().is_some() {
+                    "SHA256 校验通过"
+                } else {
+                    "下载完成"
+                },
                 crate::byte_size::human_bytes(received)
             ),
         )?;
@@ -899,4 +1034,82 @@ mod tests {
         .unwrap_err();
         assert!(error.contains("未响应"));
     }
+
+    #[tokio::test]
+    async fn unsigned_download_keeps_a_partial_and_restarts_when_range_is_ignored() {
+        let temp = tempfile::tempdir().unwrap();
+        let state = RuntimeState::open(temp.path().join("data")).unwrap();
+        let id = task(&state);
+        let content = b"unsigned official source archive body";
+        let directory = owned_directory(state.data_dir(), &["downloads"]).unwrap();
+        fs::write(directory.join("source-fixture.part"), b"stale-partial").unwrap();
+        let (url, requests, worker) = server(vec![
+            reply(
+                "200 OK",
+                &format!("Content-Length: {}\r\n", content.len()),
+                &content[..10],
+            ),
+            reply(
+                "200 OK",
+                &format!("Content-Length: {}\r\n", content.len()),
+                content,
+            ),
+        ]);
+        let path = download_with_client_unsigned(
+            &state,
+            &id,
+            &url,
+            "source-fixture",
+            1024,
+            &state.client,
+            None,
+        )
+        .await
+        .unwrap();
+        worker.join().unwrap();
+        assert_eq!(fs::read(&path).unwrap(), content);
+        assert_eq!(
+            path.file_name().unwrap(),
+            format!("source-fixture-{}.download", hash(content)).as_str()
+        );
+        let requests = requests.lock().unwrap();
+        assert_eq!(requests.len(), 2);
+        assert!(requests[1].contains("range: bytes=10-\r\n"));
+        assert!(!directory.join("source-fixture.part").exists());
+    }
+
+    #[test]
+    fn unsigned_cache_keys_reject_paths_and_error_chains_keep_inner_causes() {
+        assert!(Artifact::key("../outside").is_err());
+        assert!(Artifact::key("onlyone").is_err());
+        assert_eq!(
+            Artifact::key("source-fixture").unwrap().stem(),
+            "source-fixture"
+        );
+        let message = format_error_chain(&ChainError);
+        assert!(message.contains("error decoding response body"));
+        assert!(message.contains("operation timed out"));
+    }
+
+    #[derive(Debug)]
+    struct ChainError;
+    impl std::fmt::Display for ChainError {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.write_str("error decoding response body")
+        }
+    }
+    impl std::error::Error for ChainError {
+        fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+            Some(&TIMEOUT)
+        }
+    }
+    #[derive(Debug)]
+    struct TimeoutError;
+    static TIMEOUT: TimeoutError = TimeoutError;
+    impl std::fmt::Display for TimeoutError {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.write_str("operation timed out")
+        }
+    }
+    impl std::error::Error for TimeoutError {}
 }
