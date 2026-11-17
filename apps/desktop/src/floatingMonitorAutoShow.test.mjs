@@ -18,15 +18,17 @@ const fnBody = (source, signature) => {
 test('taskbar host failures stop the widget without opening the strip', () => {
   const start = fnBody(taskbar, 'async fn start(');
   assert.doesNotMatch(start, /open_window/);
-  assert.match(start, /stop\(app, failure_message\(&reason, false\)\)/);
+  assert.match(start, /after_unintentional_stop\(app, &helper_start_failed_reason\(&error, english\)\)/);
+  assert.match(start, /after_unintentional_stop\(app, &reason\)/);
   assert.match(start, /recover\(&event_app, &event_session, message, false\)/);
-  assert.match(start, /"任务栏辅助进程输入已断开"\.into\(\),\s*false,/);
+  assert.match(start, /helper_disconnected_reason\(english\),\s*false,/);
   // The widget menu's own "切换到桌面浮条" is the one explicit switch left.
   assert.match(start, /recover\(&event_app, &event_session, "已切换到桌面浮条"\.into\(\), true\)/);
   assert.equal(start.match(/, true\)\.await/g)?.length, 1);
   const recover = fnBody(taskbar, 'async fn recover(');
   assert.match(recover, /if show \{\s*if let Err\(error\) = crate::floating_monitor::open_window/);
-  assert.match(recover, /if show \{\s*let _ = app\.emit_to\(/);
+  assert.match(recover, /stop\(app, failure_message\(&message, show\)\);\s*let _ = app\.emit_to\(/);
+  assert.match(recover, /else \{\s*after_unintentional_stop\(app, &message\);/);
 });
 
 test('strip opens only from explicit user requests', () => {

@@ -555,7 +555,7 @@ impl Default for ModeStatus {
             message: if cfg!(windows) {
                 "任务栏监控挂载时会验证主屏任务栏的可用空间"
             } else {
-                "任务栏监控仅支持 Windows，保留桌面浮条"
+                "任务栏监控仅支持 Windows"
             }
             .into(),
         }
@@ -597,6 +597,55 @@ fn retry_paused_message(reason: &str, english: bool) -> String {
             "任务栏监控已停止：{reason}。已暂停自动重试，以免持续故障被忽略。请点击「重新挂载」，或先关闭再打开开关。"
         )
     }
+}
+
+fn localized(english: bool, chinese: &str, english_text: &str) -> String {
+    if english {
+        english_text.to_string()
+    } else {
+        chinese.to_string()
+    }
+}
+
+fn helper_start_failed_reason(error: &impl ToString, english: bool) -> String {
+    let error = error.to_string();
+    if english {
+        format!("Taskbar helper failed to start: {error}")
+    } else {
+        format!("任务栏辅助进程启动失败：{error}")
+    }
+}
+
+fn restore_failed_reason(error: &str, english: bool) -> String {
+    if english {
+        format!("Taskbar monitor recovery failed: {error}")
+    } else {
+        format!("任务栏监控恢复失败：{error}")
+    }
+}
+
+fn unexpected_detach_reason(english: bool) -> String {
+    localized(
+        english,
+        "任务栏窗口被意外关闭",
+        "The taskbar window was closed unexpectedly",
+    )
+}
+
+fn first_frame_timeout_reason(english: bool) -> String {
+    localized(
+        english,
+        "任务栏宿主未在时限内完成首帧绘制",
+        "The taskbar host did not finish the first frame in time",
+    )
+}
+
+fn helper_disconnected_reason(english: bool) -> String {
+    localized(
+        english,
+        "任务栏辅助进程输入已断开",
+        "The taskbar helper input pipe was disconnected",
+    )
 }
 
 #[derive(Default)]
@@ -848,8 +897,13 @@ pub(crate) async fn move_monitor_to_taskbar(
     }
     #[cfg(not(windows))]
     {
-        let _ = (app, preferences);
-        Err("任务栏监控仅支持 Windows，保留桌面浮条".into())
+        let english = Preferences::normalize(&preferences).english;
+        let _ = app;
+        Err(localized(
+            english,
+            "任务栏监控仅支持 Windows，桌面浮条保持打开。",
+            "Taskbar monitor is only available on Windows. The desktop strip stays open.",
+        ))
     }
     #[cfg(windows)]
     {
@@ -968,8 +1022,9 @@ pub(crate) fn restore_on_launch(app: &AppHandle, settings: &Value) {
             tokio::time::sleep(std::time::Duration::from_secs(2)).await;
             let state = app.state::<TaskbarMonitorState>();
             let _switch = state.switching.lock().await;
+            let english = preferences.english;
             if let Err(error) = start(&app, preferences).await {
-                after_unintentional_stop(&app, &format!("任务栏监控恢复失败：{error}"));
+                after_unintentional_stop(&app, &restore_failed_reason(&error, english));
             }
             notify_visibility(&app);
         });
@@ -1082,7 +1137,7 @@ async fn start(app: &AppHandle, preferences: Preferences) -> Result<(), String> 
         Ok(child) => child,
         Err(error) => {
             // No automatic strip: it only appears when the user asks for it.
-            after_unintentional_stop(app, &format!("任务栏辅助进程启动失败：{error}"));
+            after_unintentional_stop(app, &helper_start_failed_reason(&error, english));
             return Ok(());
         }
     };
@@ -1219,7 +1274,7 @@ async fn start(app: &AppHandle, preferences: Preferences) -> Result<(), String> 
                     recover(
                         &event_app,
                         &event_session,
-                        "任务栏窗口被意外关闭".into(),
+                        unexpected_detach_reason(english),
                         false,
                     )
                     .await;
@@ -1271,7 +1326,7 @@ async fn start(app: &AppHandle, preferences: Preferences) -> Result<(), String> 
             session.stop();
             let reason = match result {
                 Ok(Ok(Err(message))) => message,
-                _ => "任务栏宿主未在时限内完成首帧绘制".into(),
+                _ => first_frame_timeout_reason(english),
             };
             // Startup restore, Explorer restarts and display changes land here
             // too; opening the strip from this path made it pop up on its own.
@@ -1309,7 +1364,7 @@ async fn start(app: &AppHandle, preferences: Preferences) -> Result<(), String> 
                 recover(
                     &sampler_app,
                     &session,
-                    "任务栏辅助进程输入已断开".into(),
+                    helper_disconnected_reason(english),
                     false,
                 )
                 .await;
@@ -1401,7 +1456,7 @@ mod tests {
         assert!(recover_fn[..600].contains("if show {"));
         // Host failures and disconnects stop the widget without showing the strip.
         assert!(source.contains("recover(&event_app, &event_session, message, false)"));
-        assert!(source.contains("\"任务栏辅助进程输入已断开\".into(),\n                    false,"));
+        assert!(source.contains("helper_disconnected_reason(english),\n                    false,"));
         assert_eq!(source.matches(", true).await").count(), 1);
         assert!(source
             .contains("recover(&event_app, &event_session, \"已切换到桌面浮条\".into(), true)"));
@@ -2033,6 +2088,19 @@ mod tests {
         let paused = retry_paused_message("inspect timeout", true);
         assert!(paused.contains("Automatic remount paused"));
         assert!(paused.contains("Remount"));
+        assert_eq!(
+            unexpected_detach_reason(true),
+            "The taskbar window was closed unexpectedly"
+        );
+        assert!(unexpected_detach_reason(false).contains("意外关闭"));
+        assert!(helper_start_failed_reason(&"boom", true)
+            .starts_with("Taskbar helper failed to start:"));
+        assert!(!helper_start_failed_reason(&"boom", true)
+            .chars()
+            .any(|ch| ('\u{4e00}'..='\u{9fff}').contains(&ch)));
+        assert!(first_frame_timeout_reason(true).contains("first frame"));
+        assert!(helper_disconnected_reason(true).contains("disconnected"));
+        assert!(restore_failed_reason("busy", true).starts_with("Taskbar monitor recovery failed:"));
     }
 
     #[test]
