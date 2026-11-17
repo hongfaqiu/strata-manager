@@ -1,6 +1,8 @@
 .taskbar-monitor-settings{grid-column:1 / -1;min-width:0}
 .taskbar-monitor-settings .panel-header{gap:12px;flex-wrap:wrap}
 .taskbar-monitor-settings-switch{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:600}
+.taskbar-monitor-settings-remount{padding:2px 8px;border:1px solid var(--st-line,var(--border));border-radius:6px;background:var(--st-hover,#0000000d);color:inherit;font-size:12px;font-weight:600;cursor:pointer}
+.taskbar-monitor-settings-remount:disabled{opacity:.6;cursor:default}
 .taskbar-monitor-settings-status{margin:0 0 14px;color:var(--st-ink-muted,var(--muted));font-size:12px;line-height:1.6;overflow-wrap:anywhere}
 .taskbar-monitor-settings-body{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1fr);gap:24px;align-items:start}
 .taskbar-monitor-settings-stage{position:relative;min-width:0}
@@ -23,6 +25,7 @@
 .taskbar-widget-preview-metric[data-item=prefill]{--metric:#60c8fa}
 .taskbar-widget-preview-metric[data-item=gpu]{--metric:#fb923c}
 .taskbar-widget-preview-metric[data-item=vram]{--metric:#c4a5fd}
+.taskbar-widget-preview-metric[data-item=cpu]{--metric:#e879f9}
 .taskbar-widget-preview-metric[data-item=temperature]{--metric:#4ade80}
 .taskbar-widget-preview-metric[data-item=status]{--metric:var(--tone)}
 .taskbar-widget-preview-value{color:var(--metric);font-size:14px;font-weight:400;font-variant-numeric:tabular-nums}

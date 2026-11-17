@@ -24,3 +24,10 @@ test('history resets by runtime identity, rejects duplicate timestamps, caps at 
   history = appendMonitorHistory(history, 'pid2', 77000, metric, true);
   assert.equal(history.points.length, 1);
 });
+
+test('cpu occupancy is kept when the model is not loaded, including a measured zero', () => {
+  assert.equal(monitorValues({ cpuUtil: 0 }, false).cpu, 0);
+  assert.equal(monitorValues({ cpuUtil: 8 }, false).cpu, 8);
+  assert.equal(monitorValues({ cpuUtil: 120 }, false).cpu, null);
+  assert.equal(monitorValues({}, false).cpu, null);
+});

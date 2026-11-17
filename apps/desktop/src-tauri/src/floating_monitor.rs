@@ -751,7 +751,17 @@ pub(crate) async fn read_existing(
     .map_err(|e| e.to_string())
 }
 
-pub(crate) async fn collect_snapshot<F, Fut>(mut rpc: F) -> Result<Value, String>
+pub(crate) async fn collect_snapshot<F, Fut>(rpc: F) -> Result<Value, String>
+where
+    F: FnMut(&'static str, Value) -> Fut,
+    Fut: Future<Output = Result<Value, String>>,
+{
+    let mut snapshot = collect_service_snapshot(rpc).await?;
+    crate::system_cpu::apply_system_cpu(&mut snapshot, crate::system_cpu::system_cpu_percent());
+    Ok(snapshot)
+}
+
+async fn collect_service_snapshot<F, Fut>(mut rpc: F) -> Result<Value, String>
 where
     F: FnMut(&'static str, Value) -> Fut,
     Fut: Future<Output = Result<Value, String>>,
@@ -1599,7 +1609,22 @@ mod tests {
                     "unavailable"
                 }
             );
-            assert!(snapshot.get("metrics").is_none());
+            assert!(snapshot
+                .get("metrics")
+                .and_then(|metrics| metrics.get("live"))
+                .is_none());
+            assert!(snapshot
+                .get("metrics")
+                .and_then(|metrics| metrics.get("engine"))
+                .is_none());
+            if let Some(cpu) = snapshot.pointer("/metrics/hardware/cpu") {
+                assert!(
+                    cpu.is_null()
+                        || cpu
+                            .as_f64()
+                            .is_some_and(|value| (0.0..=100.0).contains(&value))
+                );
+            }
             assert!(calls.iter().all(|(method, _)| matches!(
                 method.as_str(),
                 "store_get" | "local_installations" | "supervisor_status" | "service_status"
@@ -1614,7 +1639,18 @@ mod tests {
         {
             let (snapshot, calls) = fixture(Some(true), health, metrics).await;
             assert_eq!(snapshot["phase"], phase);
-            assert!(snapshot.get("metrics").is_none());
+            assert!(snapshot
+                .get("metrics")
+                .and_then(|metrics| metrics.get("live"))
+                .is_none());
+            if let Some(cpu) = snapshot.pointer("/metrics/hardware/cpu") {
+                assert!(
+                    cpu.is_null()
+                        || cpu
+                            .as_f64()
+                            .is_some_and(|value| (0.0..=100.0).contains(&value))
+                );
+            }
             if !health {
                 assert!(!calls.iter().any(|(_, params)| params["path"] == "/metrics"));
             }

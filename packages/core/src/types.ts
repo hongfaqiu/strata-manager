@@ -105,7 +105,7 @@ export type FloatingMonitorLayout = 'strip' | 'panel';
 export type LegacyFloatingMonitorLayout = 'compact' | 'twoRow';
 export type FloatingMonitorMode = 'floating' | 'taskbar';
 /** Items the Windows taskbar widget can show, in display order. */
-export type TaskbarWidgetItem = 'generation' | 'prefill' | 'gpu' | 'vram' | 'temperature' | 'status';
+export type TaskbarWidgetItem = 'generation' | 'prefill' | 'gpu' | 'vram' | 'cpu' | 'temperature' | 'status';
 /** Metric drawn as the ring gauge of the Windows taskbar widget. */
 export type TaskbarWidgetRing = 'gpu' | 'vram' | 'context' | 'off';
 

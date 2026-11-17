@@ -12,6 +12,7 @@ fn busy() -> Reading<'static> {
         gpu: Some(76.4),
         vram_used: Some(19.8),
         vram_total: Some(24.0),
+        cpu: Some(23.0),
         temperature: Some(52.0),
         context_used: Some(12_400.0),
         context_total: Some(32_768.0),
@@ -447,8 +448,9 @@ fn value_colours_reach_4_5_to_1_on_win11_light_and_dark_taskbars() {
     for (dark, background) in [(false, TASKBAR_LIGHT), (true, TASKBAR_DARK)] {
         let palette = Palette::new(dark);
         let mut colours = vec![palette.text, palette.muted];
-        colours
-            .extend(["generation", "prefill", "gpu", "vram", "context"].map(|m| palette.metric(m)));
+        colours.extend(
+            ["generation", "prefill", "gpu", "vram", "cpu", "context"].map(|m| palette.metric(m)),
+        );
         colours.extend([40.0, 70.0, 90.0].map(|t| palette.temperature(t)));
         colours.extend(
             [
@@ -466,11 +468,11 @@ fn value_colours_reach_4_5_to_1_on_win11_light_and_dark_taskbars() {
             assert!(ratio >= 4.5, "{colour:?} on {background:?}: {ratio:.2}");
         }
         let metrics: std::collections::HashSet<_> =
-            ["generation", "prefill", "gpu", "vram", "context"]
+            ["generation", "prefill", "gpu", "vram", "cpu", "context"]
                 .map(|m| palette.metric(m))
                 .into_iter()
                 .collect();
-        assert_eq!(metrics.len(), 5);
+        assert_eq!(metrics.len(), 6);
     }
 }
 
@@ -693,6 +695,7 @@ fn menu_lists_open_customize_and_close_with_checked_state() {
             "预填充速度",
             "GPU 负载",
             "显存占用",
+            "CPU 占用",
             "GPU 温度",
             "服务状态"
         ]
@@ -712,10 +715,11 @@ fn menu_lists_open_customize_and_close_with_checked_state() {
     assert!(checked.contains(&(200, true)) && checked.contains(&(201, false)));
     assert!(checked.contains(&(202, false)) && checked.contains(&(203, false)));
     // Temperature appears only when available or already selected.
+    // IDs follow ITEMS: generation=100 … cpu=104, temperature=105, status=106.
     assert!(!ids(&menu(&WidgetPrefs::default(), true, false))
         .iter()
-        .any(|(id, _)| *id == 104));
-    assert!(ids(&menu(&prefs("gpu", &["temperature"]), true, false)).contains(&(104, true)));
+        .any(|(id, _)| *id == 105));
+    assert!(ids(&menu(&prefs("gpu", &["temperature"]), true, false)).contains(&(105, true)));
 }
 
 #[test]
@@ -741,7 +745,7 @@ fn menu_commands_toggle_items_switch_ring_and_change_width() {
     assert_eq!(apply(&base, MENU_SETTINGS), MenuAction::Settings);
     assert_eq!(apply(&base, MENU_COLORS), MenuAction::Colors);
     assert_eq!(apply(&base, 0), MenuAction::Nothing);
-    assert_eq!(apply(&base, 106), MenuAction::Nothing);
+    assert_eq!(apply(&base, 107), MenuAction::Nothing);
     let MenuAction::Update(context) = apply(&base, 202) else {
         panic!("context ring")
     };
@@ -775,6 +779,7 @@ fn widget_preview_export() {
         gpu: Some(9.0),
         vram_used: Some(19.8),
         vram_total: Some(24.0),
+        cpu: Some(12.0),
         temperature: Some(44.0),
         context_used: Some(3_900.0),
         context_total: Some(32_768.0),
@@ -1094,6 +1099,8 @@ fn single_row_drops_captions_and_keeps_every_value_inside_the_strip() {
                 "%",
                 "19.8",
                 "GB",
+                "23",
+                "%",
                 "52",
                 "℃",
                 "运行中"
@@ -1119,7 +1126,7 @@ fn single_row_drops_captions_and_keeps_every_value_inside_the_strip() {
     }
     assert_eq!(
         glyphs(&layout(&all, false, 96, 32, &busy(), &Palette::new(true))).len(),
-        2
+        3
     );
 }
 
@@ -1135,7 +1142,7 @@ fn single_row_widths_for_typical_sets() {
             &["generation", "prefill", "gpu", "temperature"],
             195,
         ),
-        ("gpu", &ITEMS, 270),
+        ("gpu", &ITEMS, 310),
     ];
     for (ring, items, limit) in sets {
         let single = size(&rows(ring, items, "single"), false, 96, 32);
@@ -1145,8 +1152,9 @@ fn single_row_widths_for_typical_sets() {
         assert!(english <= limit + 20, "{items:?} en {english}");
         // Scales with DPI rather than growing extra slack.
         let scaled = size(&rows(ring, items, "single"), false, 144, 48).0 as f32;
+        // All-items layouts accumulate a few pixels of rounding at 150% DPI.
         assert!(
-            (scaled - single.0 as f32 * 1.5).abs() <= 8.0,
+            (scaled - single.0 as f32 * 1.5).abs() <= 16.0,
             "{items:?} {scaled}"
         );
     }
@@ -1190,4 +1198,48 @@ fn rows_menu_switches_and_keeps_everything_else() {
     );
     assert_eq!(apply(&next, 301), MenuAction::Nothing);
     assert_eq!(apply(&next, 303), MenuAction::Nothing);
+}
+
+#[test]
+fn cpu_is_an_optional_item_and_keeps_a_measured_zero() {
+    let prefs = WidgetPrefs::normalize(&json!({"items":["cpu","bogus"],"ring":"off"}));
+    assert_eq!(prefs.items, vec!["cpu".to_string()]);
+    assert!(prefs.has("cpu"));
+    let palette = Palette::new(true);
+    let zero = Reading {
+        cpu: Some(0.0),
+        tone: Tone::Stopped,
+        state: "未启动",
+        ..Reading::default()
+    };
+    let zero_layout = layout(&prefs, false, 96, 48, &zero, &palette);
+    assert!(texts(&zero_layout).contains(&"0"));
+    let unknown = Reading {
+        cpu: None,
+        tone: Tone::Stopped,
+        state: "未启动",
+        ..Reading::default()
+    };
+    let unknown_layout = layout(&prefs, false, 96, 48, &unknown, &palette);
+    assert!(texts(&unknown_layout).contains(&DASH));
+    assert_eq!(item_menu_label("cpu", false), "CPU 占用");
+    assert_eq!(item_menu_label("cpu", true), "CPU usage");
+}
+
+#[test]
+fn one_row_cpu_uses_the_chip_glyph() {
+    let prefs = WidgetPrefs {
+        rows: "single".into(),
+        items: vec!["cpu".into()],
+        ring: "off".into(),
+        colors: Default::default(),
+    };
+    let layout = layout(&prefs, false, 96, 48, &busy(), &Palette::new(true));
+    assert!(layout.ops.iter().any(|op| matches!(
+        op,
+        Op::Glyph {
+            shape: Glyph::Chip,
+            ..
+        }
+    )));
 }

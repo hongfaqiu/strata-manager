@@ -520,6 +520,7 @@ export function App() {
             if (event.payload.visible === true || event.payload.active) monitorSettingsChange.current({ mode: event.payload.mode });
           }
         }),
+        listen<string>('monitor-taskbar-notice', event => { if (!disposed && event.payload) notify(event.payload, true); }),
       ])) { if (disposed) stop(); else stops.push(stop); }
     }).catch(error => { if (!disposed) notify(errorText(error), true); });
     return () => { disposed = true; for (const stop of stops) stop(); };

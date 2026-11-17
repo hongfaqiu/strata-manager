@@ -23,16 +23,16 @@ interface Props {
 
 /** Same wording as the native right-click menu (taskbar_widget::item_menu_label). */
 export const TASKBAR_ITEM_COPY: Record<'zh-CN' | 'en', Record<TaskbarWidgetItem, string>> = {
-  'zh-CN': { generation: '生成速度', prefill: '预填充速度', gpu: 'GPU 负载', vram: '显存占用', temperature: 'GPU 温度', status: '服务状态' },
-  en: { generation: 'Generation speed', prefill: 'Prefill speed', gpu: 'GPU load', vram: 'VRAM usage', temperature: 'GPU temperature', status: 'Service status' },
+  'zh-CN': { generation: '生成速度', prefill: '预填充速度', gpu: 'GPU 负载', vram: '显存占用', cpu: 'CPU 占用', temperature: 'GPU 温度', status: '服务状态' },
+  en: { generation: 'Generation speed', prefill: 'Prefill speed', gpu: 'GPU load', vram: 'VRAM usage', cpu: 'CPU usage', temperature: 'GPU temperature', status: 'Service status' },
 };
 const SHORT: Record<'zh-CN' | 'en', Record<TaskbarWidgetItem, string>> = {
-  'zh-CN': { generation: '生成', prefill: '预填充', gpu: 'GPU', vram: '显存', temperature: '温度', status: '状态' },
-  en: { generation: 'Gen', prefill: 'Prefill', gpu: 'GPU', vram: 'VRAM', temperature: 'Temp', status: 'Status' },
+  'zh-CN': { generation: '生成', prefill: '预填充', gpu: 'GPU', vram: '显存', cpu: 'CPU', temperature: '温度', status: '状态' },
+  en: { generation: 'Gen', prefill: 'Prefill', gpu: 'GPU', vram: 'VRAM', cpu: 'CPU', temperature: 'Temp', status: 'Status' },
 };
 /** Example reading; number and compact unit are drawn separately like the native widget. */
 const EXAMPLE: Record<Exclude<TaskbarWidgetItem, 'status'>, [string, string]> = {
-  generation: ['21.3', 't/s'], prefill: ['3.2k', 't/s'], gpu: ['76', '%'], vram: ['19.8', 'GB'], temperature: ['52', '℃'],
+  generation: ['21.3', 't/s'], prefill: ['3.2k', 't/s'], gpu: ['76', '%'], vram: ['19.8', 'GB'], cpu: ['23', '%'], temperature: ['52', '℃'],
 };
 /** Colour rows also cover the ring-only context metric. */
 const COLOR_COPY: Record<'zh-CN' | 'en', Record<TaskbarWidgetColorItem, string>> = {
@@ -44,8 +44,9 @@ const RING_EXAMPLE: Record<Exclude<TaskbarWidgetRing, 'off'>, number> = { gpu: 7
 export const TASKBAR_GLYPHS = {
   generation: '0,-1 0.28,-0.28 1,0 0.28,0.28 0,1 -0.28,0.28 -1,0 -0.28,-0.28',
   prefill: '-1,-0.18 0.1,-0.18 0.1,-0.72 1,0 0.1,0.72 0.1,0.18 -1,0.18',
+  cpu: '-0.55,-0.7 -0.2,-0.7 -0.2,-1 0.2,-1 0.2,-0.7 0.55,-0.7 0.55,-0.2 0.85,-0.2 0.85,0.2 0.55,0.2 0.55,0.7 0.2,0.7 0.2,1 -0.2,1 -0.2,0.7 -0.55,0.7 -0.55,0.2 -0.85,0.2 -0.85,-0.2 -0.55,-0.2',
 } as const;
-function Glyph({ item }: { item: 'generation' | 'prefill' }) {
+function Glyph({ item }: { item: 'generation' | 'prefill' | 'cpu' }) {
   return <svg className="taskbar-widget-preview-glyph" viewBox="-1 -1 2 2" width="8" height="8" aria-hidden="true"><polygon points={TASKBAR_GLYPHS[item]}/></svg>;
 }
 
@@ -83,7 +84,7 @@ export function TaskbarWidgetPreview({ widget, language }: { widget: TaskbarWidg
       : <span key={item} className="taskbar-widget-preview-metric" data-item={item} style={custom(item, '--metric')}>
       {item === 'status'
         ? <b className="taskbar-widget-preview-value">{copy === 'zh-CN' ? '运行中' : 'Busy'}</b>
-        : <b className="taskbar-widget-preview-value">{single && (item === 'generation' || item === 'prefill') && <Glyph item={item}/>}{EXAMPLE[item][0]}<small>{EXAMPLE[item][1]}</small></b>}
+        : <b className="taskbar-widget-preview-value">{single && (item === 'generation' || item === 'prefill' || item === 'cpu') && <Glyph item={item}/>}{EXAMPLE[item][0]}<small>{EXAMPLE[item][1]}</small></b>}
       {!single && <em>{SHORT[copy][item]}</em>}
     </span>)}
   </div>;
@@ -137,6 +138,7 @@ export function TaskbarMonitorSettings({ enabled, widget, desktop, language, mod
   const value = normalizeTaskbarWidgetPreferences(widget);
   const supported = desktop && modeStatus?.supported === true;
   const active = modeStatus?.mode === 'taskbar' && modeStatus.active;
+  const preferred = enabled;
   const [pending, setPending] = useState(false);
   const [error, setError] = useState('');
   const busy = useRef(false);
@@ -161,13 +163,18 @@ export function TaskbarMonitorSettings({ enabled, widget, desktop, language, mod
   const status = !desktop ? (zh ? '请在桌面应用中使用。' : 'Available in the desktop app.')
     : !supported ? (zh ? '仅支持 Windows 10 / 11 主屏任务栏。' : 'Windows 10 / 11 primary taskbar only.')
     : active ? modeStatus?.message
-    : enabled && modeStatus?.message ? modeStatus.message
+    : preferred && modeStatus?.message ? modeStatus.message
     : zh ? '默认关闭。开启后显示在通知区左侧；右键可调整内容或关闭。' : 'Off by default. Shown left of the notification area; right-click it to adjust or close.';
+  const switchLabel = active ? (zh ? '开' : 'On') : preferred ? (zh ? '已开启' : 'Enabled') : (zh ? '关' : 'Off');
+  // Preference stays on after a failure or a shortcut hide, so the toggle
+  // cannot be flipped "on" again; this is the explicit remount control.
+  const canRemount = supported && preferred && !active && !!onEnabledChange;
   return <Panel className="taskbar-monitor-settings" title={zh ? '任务栏监控（Windows）' : 'Taskbar monitor (Windows)'} action={
     <div className="taskbar-monitor-settings-switch">
-      <span>{active ? (zh ? '开' : 'On') : (zh ? '关' : 'Off')}</span>
+      <span>{switchLabel}</span>
       {pending && <LoaderCircle size={13} className="spin" aria-hidden="true"/>}
-      <Toggle ariaLabel={zh ? '任务栏监控' : 'Taskbar monitor'} checked={active} disabled={!supported || pending || !onEnabledChange} onCheckedChange={next => void toggle(next)}/>
+      {canRemount && <button type="button" className="taskbar-monitor-settings-remount" disabled={pending} onClick={() => void toggle(true)}>{zh ? '重新挂载' : 'Remount'}</button>}
+      <Toggle ariaLabel={zh ? '任务栏监控' : 'Taskbar monitor'} checked={preferred} disabled={!supported || pending || !onEnabledChange} onCheckedChange={next => void toggle(next)}/>
     </div>
   }>
     <p className="taskbar-monitor-settings-status" role="status">{status}</p>
@@ -187,7 +194,7 @@ export function TaskbarMonitorSettings({ enabled, widget, desktop, language, mod
         <section aria-labelledby="taskbar-monitor-rows">
           <h3 id="taskbar-monitor-rows">{zh ? '文字行数' : 'Text rows'}</h3>
           <Segmented ariaLabel={zh ? '文字行数' : 'Text rows'} value={value.rows ?? 'auto'} options={rowOptions.map(option => ({ ...option, disabled: !desktop }))} onValueChange={rows => onWidgetChange(normalizeTaskbarWidgetPreferences({ ...value, rows }))}/>
-          <p className="taskbar-monitor-settings-hint">{zh ? '单行更矮更紧凑：不显示指标名称，靠单位和图标区分（% 为 GPU、GB 为显存、℃ 为温度，星形为生成、箭头为预填充）。自动：小图标任务栏用单行，默认高度用两行。' : 'One row is shorter and tighter: captions are dropped and units and glyphs tell items apart (% GPU, GB VRAM, ℃ temperature, spark generation, arrow prefill). Auto uses one row on a small-icon taskbar and two rows at the default height.'}</p>
+          <p className="taskbar-monitor-settings-hint">{zh ? '单行更矮更紧凑：不显示指标名称，靠单位和图标区分（% 为 GPU、芯片图标加 % 为 CPU、GB 为显存、℃ 为温度，星形为生成、箭头为预填充）。自动：小图标任务栏用单行，默认高度用两行。' : 'One row is shorter and tighter: captions are dropped and units and glyphs tell items apart (% GPU, chip glyph plus % for CPU, GB VRAM, ℃ temperature, spark generation, arrow prefill). Auto uses one row on a small-icon taskbar and two rows at the default height.'}</p>
         </section>
         <section aria-labelledby="taskbar-monitor-items">
           <h3 id="taskbar-monitor-items">{zh ? '显示内容' : 'Shown items'}</h3>
@@ -201,7 +208,7 @@ export function TaskbarMonitorSettings({ enabled, widget, desktop, language, mod
               </label>;
             })}
           </div>
-          <p className="taskbar-monitor-settings-hint">{zh ? '宽度随所选内容变化；与任务栏右键「自定义内容」同步。同时显示生成和预填充速度时，两项上下叠成一列：上行是生成（星形），下行是预填充（箭头）。GPU 温度仅在显卡上报时出现在右键菜单中。' : 'Width follows the selection and stays in sync with the widget’s right-click “Customize” menu. With both speeds shown they stack in one column: generation on top (spark), prefill below (arrow). GPU temperature appears in that menu only when the GPU reports it.'}</p>
+          <p className="taskbar-monitor-settings-hint">{zh ? '宽度随所选内容变化；与任务栏右键「自定义内容」同步。已保存的显示项不会被自动加入 CPU。同时显示生成和预填充速度时，两项上下叠成一列：上行是生成（星形），下行是预填充（箭头）。GPU 温度仅在显卡上报时出现在右键菜单中。CPU 占用是整机采样，服务未启动或无 GPU 时仍可显示。' : 'Width follows the selection and stays in sync with the widget’s right-click “Customize” menu. Existing saved item lists are not changed to include CPU automatically. With both speeds shown they stack in one column: generation on top (spark), prefill below (arrow). GPU temperature appears in that menu only when the GPU reports it. CPU usage is a whole-machine sample and stays available when the service is stopped or no GPU is present.'}</p>
         </section>
       </div>
     </div>
