@@ -431,6 +431,9 @@ describe('taskbar widget preferences', () => {
   it('matches the native normalisation: allowlist, canonical order, never empty', () => {
     expect(normalizeTaskbarWidgetPreferences({ ring: 'cpu', items: ['status', 'bad', 'gpu', 'status', 3, 'generation'] }))
       .toEqual({ ring: 'gpu', items: ['generation', 'gpu', 'status'] });
+    expect(normalizeTaskbarWidgetPreferences({ items: ['cpu', 'vram', 'cpu', 'unknown'], colors: { cpu: '#86198F' } }))
+      .toEqual({ ring: 'gpu', items: ['vram', 'cpu'], colors: { cpu: '#86198f' } });
+    expect(normalizeTaskbarWidgetPreferences().items).toEqual(['generation', 'prefill']);
     expect(normalizeTaskbarWidgetPreferences({ ring: 'vram', items: [] })).toEqual({ ring: 'vram', items: [] });
     expect(normalizeTaskbarWidgetPreferences({ ring: 'off', items: [] })).toEqual({ ring: 'gpu', items: [] });
     expect(normalizeTaskbarWidgetPreferences({ ring: 'off', items: 'gpu' })).toEqual({ ring: 'off', items: ['generation', 'prefill'] });

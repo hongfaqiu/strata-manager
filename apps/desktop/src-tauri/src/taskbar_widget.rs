@@ -7,11 +7,12 @@ use serde_json::Value;
 use std::collections::BTreeMap;
 
 /// Items in their canonical display order.
-pub(crate) const ITEMS: [&str; 6] = [
+pub(crate) const ITEMS: [&str; 7] = [
     "generation",
     "prefill",
     "gpu",
     "vram",
+    "cpu",
     "temperature",
     "status",
 ];
@@ -21,11 +22,12 @@ pub(crate) const ROWS: [&str; 3] = ["auto", "single", "double"];
 const DEFAULT_ITEMS: [&str; 2] = ["generation", "prefill"];
 /// Metrics whose colour the user may override. The status dot stays semantic;
 /// `context` is a ring-only metric.
-pub(crate) const COLOR_ITEMS: [&str; 6] = [
+pub(crate) const COLOR_ITEMS: [&str; 7] = [
     "generation",
     "prefill",
     "gpu",
     "vram",
+    "cpu",
     "temperature",
     "context",
 ];
@@ -256,6 +258,8 @@ impl Palette {
             ("gpu", false) => rgb(0xc2410c),
             ("vram", true) => rgb(0xc4a5fd),
             ("vram", false) => rgb(0x7e22ce),
+            ("cpu", true) => rgb(0xe879f9),
+            ("cpu", false) => rgb(0x86198f),
             ("context", true) => rgb(0x2dd4bf),
             ("context", false) => rgb(0x0f766e),
             (_, true) => rgb(0xffffff),
@@ -299,6 +303,7 @@ pub(crate) struct Reading<'a> {
     pub gpu: Option<f64>,
     pub vram_used: Option<f64>,
     pub vram_total: Option<f64>,
+    pub cpu: Option<f64>,
     pub temperature: Option<f64>,
     /// Tokens of the current (idle: last) request and the model's maximum.
     pub context_used: Option<f64>,
@@ -372,12 +377,14 @@ pub(crate) fn item_label(item: &str, english: bool) -> &'static str {
         ("prefill", false) => "预填充",
         ("gpu", false) => "GPU",
         ("vram", false) => "显存",
+        ("cpu", false) => "CPU",
         ("temperature", false) => "温度",
         ("status", false) => "状态",
         ("generation", true) => "Gen",
         ("prefill", true) => "Prefill",
         ("gpu", true) => "GPU",
         ("vram", true) => "VRAM",
+        ("cpu", true) => "CPU",
         ("temperature", true) => "Temp",
         _ => "Status",
     }
@@ -390,12 +397,14 @@ pub(crate) fn item_menu_label(item: &str, english: bool) -> &'static str {
         ("prefill", false) => "预填充速度",
         ("gpu", false) => "GPU 负载",
         ("vram", false) => "显存占用",
+        ("cpu", false) => "CPU 占用",
         ("temperature", false) => "GPU 温度",
         ("status", false) => "服务状态",
         ("generation", true) => "Generation speed",
         ("prefill", true) => "Prefill speed",
         ("gpu", true) => "GPU load",
         ("vram", true) => "VRAM usage",
+        ("cpu", true) => "CPU usage",
         ("temperature", true) => "GPU temperature",
         _ => "Service status",
     }
@@ -409,6 +418,7 @@ fn value_parts(item: &str, reading: &Reading, english: bool) -> (String, &'stati
         "prefill" => (tokens(reading.prefill), "t/s"),
         "gpu" => (whole(reading.gpu.map(|v| v.min(100.0))), "%"),
         "vram" => (gib(reading.vram_used), "GB"),
+        "cpu" => (whole(reading.cpu.map(|v| v.min(100.0))), "%"),
         "temperature" => (whole(reading.temperature), "℃"),
         _ => (tone_word(reading.tone, english).into(), ""),
     }
@@ -420,6 +430,7 @@ fn template(item: &str, english: bool) -> (&'static str, &'static str) {
         ("generation" | "prefill", _) => ("99.9", "t/s"),
         ("gpu", _) => ("100", "%"),
         ("vram", _) => ("99.9", "GB"),
+        ("cpu", _) => ("100", "%"),
         ("temperature", _) => ("100", "℃"),
         (_, false) => ("载入中", ""),
         (_, true) => ("Loading", ""),
@@ -523,6 +534,8 @@ pub(crate) enum Glyph {
     Spark,
     /// Right arrow: prefill (reading the prompt in).
     Arrow,
+    /// Compact processor chip: whole-machine CPU, distinct from GPU % on one row.
+    Chip,
 }
 
 /// Unit-radius outline of a glyph; mirrored by TASKBAR_GLYPHS in the
@@ -547,6 +560,28 @@ pub(crate) fn glyph_points(shape: Glyph) -> &'static [(f32, f32)] {
             (0.1, 0.72),
             (0.1, 0.18),
             (-1.0, 0.18),
+        ],
+        Glyph::Chip => &[
+            (-0.55, -0.7),
+            (-0.2, -0.7),
+            (-0.2, -1.0),
+            (0.2, -1.0),
+            (0.2, -0.7),
+            (0.55, -0.7),
+            (0.55, -0.2),
+            (0.85, -0.2),
+            (0.85, 0.2),
+            (0.55, 0.2),
+            (0.55, 0.7),
+            (0.2, 0.7),
+            (0.2, 1.0),
+            (-0.2, 1.0),
+            (-0.2, 0.7),
+            (-0.55, 0.7),
+            (-0.55, 0.2),
+            (-0.85, 0.2),
+            (-0.85, -0.2),
+            (-0.55, -0.2),
         ],
     }
 }
@@ -629,10 +664,11 @@ fn inline_glyph_box(m: &Metrics) -> (f32, f32) {
 }
 
 /// One row: no caption. Units tell GPU (%), VRAM (GB) and temperature (℃)
-/// apart, and the spark/arrow glyphs tell generation from prefill.
+/// apart; the spark, arrow and chip glyphs tell generation, prefill and CPU
+/// apart (CPU also uses %, so it cannot rely on the unit alone).
 fn inline_column(item: &str, english: bool, m: &Metrics) -> Column {
     let (value, unit) = template(item, english);
-    let glyph = if matches!(item, "generation" | "prefill") {
+    let glyph = if matches!(item, "generation" | "prefill" | "cpu") {
         inline_glyph_box(m).1
     } else {
         0.0
@@ -902,6 +938,7 @@ fn inline_item(
     let shape = match item {
         "generation" => Some(Glyph::Spark),
         "prefill" => Some(Glyph::Arrow),
+        "cpu" => Some(Glyph::Chip),
         _ => None,
     };
     let glyph_width = if let Some(shape) = shape {

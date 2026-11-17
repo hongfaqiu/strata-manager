@@ -305,7 +305,6 @@ pub(crate) fn sample(snapshot: &Value) -> Sample {
         };
         values[2] = gpu_number(hw, "gpu_util", "util", "mean").filter(|v| *v <= 100.0);
         values[3] = gpu_number(hw, "gpu_mem_used", "mem_used", "sum").map(|v| v / 1_073_741_824.0);
-        values[4] = number(&hw["cpu"]).filter(|v| *v <= 100.0);
         values[5] = number(&hw["ram_used"]).map(|v| v / 1_073_741_824.0);
         values[6] = gpu_number(hw, "gpu_temp", "temp", "max");
         values[7] = gpu_number(hw, "gpu_power", "power", "sum");
@@ -315,6 +314,10 @@ pub(crate) fn sample(snapshot: &Value) -> Sample {
             .filter(|v| *v <= 1.0)
             .map(|v| v * 100.0);
     }
+    // System CPU is filled even when the official service is stopped or no
+    // model is loaded. A missing reading stays None (unknown), including a
+    // first sample with no interval; a measured 0% is kept.
+    values[4] = number(&hw["cpu"]).filter(|v| *v <= 100.0);
     Sample {
         state: state.into(),
         values,
@@ -483,6 +486,9 @@ pub(crate) enum HostFrame {
     /// "自定义颜色…": open the colour rows of the taskbar settings.
     Colors {},
     Close {},
+    /// The widget window received an unexpected WM_CLOSE. This is not the
+    /// user's "关闭任务栏监控" menu entry and must not persist the preference off.
+    Detached {},
 }
 
 #[cfg(any(windows, test))]
@@ -556,11 +562,54 @@ impl Default for ModeStatus {
     }
 }
 
+const MAX_TASKBAR_AUTO_RETRIES: u32 = 8;
+
+/// Seconds to wait before remount attempt `attempt` (1-based). Caps at 30s.
+pub(crate) fn retry_backoff_secs(attempt: u32) -> u64 {
+    const STEPS: [u64; 5] = [2, 4, 8, 15, 30];
+    STEPS[(attempt.saturating_sub(1) as usize).min(STEPS.len() - 1)]
+}
+
+/// Auto-remount is bounded so a persistent attach failure stays visible.
+pub(crate) fn should_auto_retry(suppress: bool, attempt: u32) -> bool {
+    !suppress && (1..=MAX_TASKBAR_AUTO_RETRIES).contains(&attempt)
+}
+
+fn retry_wait_message(reason: &str, attempt: u32, delay_secs: u64, english: bool) -> String {
+    if english {
+        format!(
+            "Taskbar monitor stopped: {reason}. Remounting in {delay_secs}s (attempt {attempt} of {MAX_TASKBAR_AUTO_RETRIES})."
+        )
+    } else {
+        format!(
+            "任务栏监控已停止：{reason}。将在 {delay_secs} 秒后自动重新挂载（第 {attempt}/{MAX_TASKBAR_AUTO_RETRIES} 次）。"
+        )
+    }
+}
+
+fn retry_paused_message(reason: &str, english: bool) -> String {
+    if english {
+        format!(
+            "Taskbar monitor stopped: {reason}. Automatic remount paused so a persistent failure stays visible. Turn the setting off and on to try again."
+        )
+    } else {
+        format!(
+            "任务栏监控已停止：{reason}。已暂停自动重试，以免持续故障被忽略。可在设置中关闭后再打开以再次尝试。"
+        )
+    }
+}
+
 #[derive(Default)]
 struct Inner {
     status: ModeStatus,
     #[cfg(windows)]
     session: Option<std::sync::Arc<Session>>,
+    #[cfg(windows)]
+    last_preferences: Option<Preferences>,
+    /// Set by an explicit user close, a switch to the strip, or app shutdown.
+    suppress_retry: bool,
+    retry_attempts: u32,
+    retry_generation: u64,
 }
 
 #[derive(Default)]
@@ -632,6 +681,108 @@ fn emit_status(app: &AppHandle, status: &ModeStatus) {
 
 fn publish(app: &AppHandle, status: &ModeStatus) {
     emit_status(app, &with_visibility(status.clone(), floating_visible(app)));
+}
+
+fn suppress_taskbar_retries(app: &AppHandle) {
+    if let Ok(mut inner) = app.state::<TaskbarMonitorState>().inner.lock() {
+        inner.suppress_retry = true;
+        inner.retry_generation = inner.retry_generation.saturating_add(1);
+    }
+}
+
+fn allow_taskbar_retries(app: &AppHandle) {
+    if let Ok(mut inner) = app.state::<TaskbarMonitorState>().inner.lock() {
+        inner.suppress_retry = false;
+        inner.retry_attempts = 0;
+        inner.retry_generation = inner.retry_generation.saturating_add(1);
+    }
+}
+
+fn emit_taskbar_notice(app: &AppHandle, message: &str) {
+    let _ = app.emit_to("main", "monitor-taskbar-notice", message);
+}
+
+/// Stop the current host after a crash or attach failure and, when the user
+/// still has the preference on, remount with backoff. Persistent failures
+/// pause automatic retries instead of looping forever.
+#[cfg(windows)]
+fn after_unintentional_stop(app: &AppHandle, reason: &str) {
+    let state = app.state::<TaskbarMonitorState>();
+    let plan = {
+        let mut inner = match state.inner.lock() {
+            Ok(inner) => inner,
+            Err(_) => {
+                stop(app, failure_message(reason, false));
+                return;
+            }
+        };
+        if inner.suppress_retry {
+            drop(inner);
+            stop(app, failure_message(reason, false));
+            return;
+        }
+        inner.retry_attempts = inner.retry_attempts.saturating_add(1);
+        let attempt = inner.retry_attempts;
+        let english = inner
+            .last_preferences
+            .as_ref()
+            .is_some_and(|preferences| preferences.english);
+        let preferences = inner.last_preferences.clone();
+        if should_auto_retry(false, attempt) {
+            let delay_secs = retry_backoff_secs(attempt);
+            inner.retry_generation = inner.retry_generation.saturating_add(1);
+            let generation = inner.retry_generation;
+            Some((
+                retry_wait_message(reason, attempt, delay_secs, english),
+                delay_secs,
+                generation,
+                preferences,
+                attempt == 1,
+            ))
+        } else {
+            inner.retry_generation = inner.retry_generation.saturating_add(1);
+            Some((retry_paused_message(reason, english), 0, 0, None, true))
+        }
+    };
+    let Some((message, delay_secs, generation, preferences, notice)) = plan else {
+        return;
+    };
+    stop(app, message.clone());
+    if notice {
+        emit_taskbar_notice(app, &message);
+    }
+    if delay_secs == 0 {
+        return;
+    }
+    let Some(preferences) = preferences else {
+        return;
+    };
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_secs(delay_secs)).await;
+        let state = app.state::<TaskbarMonitorState>();
+        let _switch = state.switching.lock().await;
+        let proceed = state.inner.lock().ok().is_some_and(|inner| {
+            !inner.suppress_retry
+                && inner.retry_generation == generation
+                && inner
+                    .session
+                    .as_ref()
+                    .is_none_or(|session| session.cancellation.is_cancelled())
+        });
+        if !proceed {
+            return;
+        }
+        // start() itself schedules a remount when the handshake fails.
+        if let Err(error) = start(&app, preferences).await {
+            after_unintentional_stop(&app, &error);
+        }
+    });
+}
+
+#[cfg(not(windows))]
+fn after_unintentional_stop(app: &AppHandle, reason: &str) {
+    stop(app, failure_message(reason, false));
 }
 
 /// Window destruction/tray hiding only updates presentation state. It must
@@ -722,7 +873,10 @@ async fn set_mode_locked(app: &AppHandle, mode: &str, preferences: Value) -> Res
         open_floating_locked(app).await
     } else {
         #[cfg(windows)]
-        start(app, Preferences::normalize(&preferences)).await?;
+        {
+            allow_taskbar_retries(app);
+            start(app, Preferences::normalize(&preferences)).await?;
+        }
         #[cfg(not(windows))]
         {
             // Never substitute the desktop strip for a taskbar request.
@@ -747,6 +901,7 @@ pub(crate) async fn open_floating(app: &AppHandle) -> Result<(), String> {
 
 async fn open_floating_locked(app: &AppHandle) -> Result<(), String> {
     crate::floating_monitor::open_window(app).await?;
+    suppress_taskbar_retries(app);
     stop(app, "已切换到桌面浮条".into());
     Ok(())
 }
@@ -778,6 +933,7 @@ fn stop(app: &AppHandle, message: String) {
 fn close_monitor_locked(app: &AppHandle) -> Result<(), String> {
     // Closing is not a switch to floating: preserve the user's saved mode and
     // never invoke open_window here. Destroy the webview to stop its poll loop.
+    suppress_taskbar_retries(app);
     stopped_status(app, "监控显示已关闭".into())?;
     let result = if let Some(window) = app.get_webview_window(crate::floating_monitor::LABEL) {
         // If native destruction fails after hiding, the explicit suspension
@@ -795,11 +951,13 @@ fn close_monitor_locked(app: &AppHandle) -> Result<(), String> {
 }
 
 pub(crate) fn shutdown(app: &AppHandle) {
+    suppress_taskbar_retries(app);
     stop(app, "任务栏监控已关闭".into());
 }
 
 /// Restores the taskbar widget on launch when the user left it switched on.
-/// A failure falls back to the desktop strip exactly like a manual start.
+/// A failure leaves the preference on and schedules a bounded remount; it
+/// never opens the desktop strip.
 pub(crate) fn restore_on_launch(app: &AppHandle, settings: &Value) {
     #[cfg(windows)]
     if settings["floatingMonitor"]["taskbarEnabled"] == true {
@@ -811,7 +969,7 @@ pub(crate) fn restore_on_launch(app: &AppHandle, settings: &Value) {
             let state = app.state::<TaskbarMonitorState>();
             let _switch = state.switching.lock().await;
             if let Err(error) = start(&app, preferences).await {
-                stop(&app, format!("任务栏监控恢复失败：{error}"));
+                after_unintentional_stop(&app, &format!("任务栏监控恢复失败：{error}"));
             }
             notify_visibility(&app);
         });
@@ -894,6 +1052,9 @@ async fn start(app: &AppHandle, preferences: Preferences) -> Result<(), String> 
     };
     let english = preferences.english;
     let state = app.state::<TaskbarMonitorState>();
+    if let Ok(mut inner) = state.inner.lock() {
+        inner.last_preferences = Some(preferences.clone());
+    }
     let existing = state
         .inner
         .lock()
@@ -921,7 +1082,7 @@ async fn start(app: &AppHandle, preferences: Preferences) -> Result<(), String> 
         Ok(child) => child,
         Err(error) => {
             // No automatic strip: it only appears when the user asks for it.
-            stop(app, format!("任务栏辅助进程启动失败：{error}"));
+            after_unintentional_stop(app, &format!("任务栏辅助进程启动失败：{error}"));
             return Ok(());
         }
     };
@@ -1054,6 +1215,16 @@ async fn start(app: &AppHandle, preferences: Preferences) -> Result<(), String> 
                     }
                     break;
                 }
+                Ok(HostFrame::Detached {}) => {
+                    recover(
+                        &event_app,
+                        &event_session,
+                        "任务栏窗口被意外关闭".into(),
+                        false,
+                    )
+                    .await;
+                    break;
+                }
                 Ok(HostFrame::Failed { message }) | Err(message) => {
                     let message: String = message.chars().take(512).collect();
                     if let Some(tx) = ready.take() {
@@ -1088,7 +1259,12 @@ async fn start(app: &AppHandle, preferences: Preferences) -> Result<(), String> 
                 visible: true,
                 message: placement_message(placement, english),
             };
-            state.inner.lock().map_err(|e| e.to_string())?.status = status.clone();
+            if let Ok(mut inner) = state.inner.lock() {
+                inner.status = status.clone();
+                inner.retry_attempts = 0;
+            } else {
+                return Err("监控状态锁不可用".into());
+            }
             publish(app, &status);
         }
         result => {
@@ -1099,7 +1275,7 @@ async fn start(app: &AppHandle, preferences: Preferences) -> Result<(), String> 
             };
             // Startup restore, Explorer restarts and display changes land here
             // too; opening the strip from this path made it pop up on its own.
-            stop(app, failure_message(&reason, false));
+            after_unintentional_stop(app, &reason);
             return Ok(());
         }
     }
@@ -1177,18 +1353,20 @@ async fn recover(app: &AppHandle, session: &Session, message: String, show: bool
     }
     if show {
         if let Err(error) = crate::floating_monitor::open_window(app).await {
+            suppress_taskbar_retries(app);
             stop(app, format!("{message}；桌面浮条恢复失败：{error}"));
             let _ = crate::floating_monitor::show_main(app, Some("settings".into()));
             return;
         }
-    }
-    stop(app, failure_message(&message, show));
-    if show {
+        suppress_taskbar_retries(app);
+        stop(app, failure_message(&message, show));
         let _ = app.emit_to(
             "main",
             "monitor-preferences-patch",
             json!({"mode":"floating"}),
         );
+    } else {
+        after_unintentional_stop(app, &message);
     }
 }
 
@@ -1805,5 +1983,66 @@ mod tests {
             timeline.accept(fixture_sample(now), now, false);
         }
         assert_eq!(timeline.points.len(), 60);
+    }
+
+    #[test]
+    fn system_cpu_is_sampled_when_the_service_is_stopped() {
+        let stopped = sample(&json!({"phase":"stopped","metrics":{"hardware":{"cpu":0.0}}}));
+        assert_eq!(stopped.values[4], Some(0.0));
+        assert!(stopped.values[0].is_none());
+        let unknown = sample(&json!({"phase":"stopped"}));
+        assert_eq!(unknown.values[4], None);
+        let online = sample(&json!({
+            "phase":"online",
+            "health":{"loaded":true},
+            "metrics":{"live":{"state":"idle"},"hardware":{"cpu":12.0}}
+        }));
+        assert_eq!(online.values[4], Some(12.0));
+        let over = sample(&json!({"phase":"none","metrics":{"hardware":{"cpu":120.0}}}));
+        assert_eq!(over.values[4], None);
+    }
+
+    #[test]
+    fn taskbar_host_does_not_exit_on_inspect_timeout_or_first_auto_hide() {
+        let source = include_str!("taskbar_host.rs").replace("\r\n", "\n");
+        let end = source
+            .find("#[cfg(test)]\nmod tests")
+            .unwrap_or(source.len());
+        let source = &source[..end];
+        assert!(!source.contains("任务栏 UI Automation 检查超时，已停止挂载"));
+        assert!(source.contains("Err(error) if error.contains(\"自动隐藏\") => {}"));
+        assert!(!source.contains("自动隐藏\") && attachment.is_some()"));
+        assert!(source.contains("HostFrame::Detached"));
+        assert!(!source.contains("保留桌面浮条"));
+    }
+
+    #[test]
+    fn remount_backoff_is_bounded_and_honours_explicit_close() {
+        assert_eq!(retry_backoff_secs(1), 2);
+        assert_eq!(retry_backoff_secs(2), 4);
+        assert_eq!(retry_backoff_secs(5), 30);
+        assert_eq!(retry_backoff_secs(20), 30);
+        assert!(should_auto_retry(false, 1));
+        assert!(should_auto_retry(false, 8));
+        assert!(!should_auto_retry(false, 9));
+        assert!(!should_auto_retry(true, 1));
+        assert!(!should_auto_retry(true, 8));
+    }
+
+    #[test]
+    fn unexpected_detach_does_not_persist_the_preference_off() {
+        let source = production_source();
+        let start = source
+            .find("Ok(HostFrame::Detached {})")
+            .expect("Detached arm");
+        let end = source[start..]
+            .find("Ok(HostFrame::Failed")
+            .expect("Failed arm after Detached");
+        let detached = &source[start..start + end];
+        assert!(!detached.contains("taskbarEnabled"));
+        let close_start = source.find("Ok(HostFrame::Close {})").expect("Close arm");
+        let close = &source[close_start..start];
+        assert!(close.contains("taskbarEnabled"));
+        assert!(close.contains("false"));
     }
 }

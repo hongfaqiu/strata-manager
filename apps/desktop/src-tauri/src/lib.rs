@@ -22,6 +22,7 @@ mod runtime_updates;
 mod service_sharing;
 mod startup;
 mod supervisor_client;
+mod system_cpu;
 mod system_locale;
 mod taskbar_monitor;
 mod vision_files;

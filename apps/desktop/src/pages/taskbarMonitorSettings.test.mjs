@@ -6,7 +6,7 @@ const page = readFileSync(new URL('./TaskbarMonitorSettings.tsx', import.meta.ur
 const native = readFileSync(new URL('../../src-tauri/src/taskbar_widget.rs', import.meta.url), 'utf8');
 const app = readFileSync(new URL('../App.tsx', import.meta.url), 'utf8');
 
-const items = ['generation', 'prefill', 'gpu', 'vram', 'temperature', 'status'];
+const items = ['generation', 'prefill', 'gpu', 'vram', 'cpu', 'temperature', 'status'];
 
 test('settings page and native right-click menu use the same item wording', () => {
   const menu = native.slice(native.indexOf('fn item_menu_label'), native.indexOf('fn template'));
@@ -22,10 +22,11 @@ test('settings page and native right-click menu use the same item wording', () =
   }
 });
 
-test('taskbar monitor is a prominent Windows toggle that is off unless active', () => {
+test('taskbar monitor toggle follows the saved preference, not only runtime active', () => {
   assert.match(page, /'任务栏监控（Windows）'/);
   assert.match(page, /'Taskbar monitor \(Windows\)'/);
-  assert.match(page, /checked=\{active\}/);
+  assert.match(page, /checked=\{preferred\}/);
+  assert.match(page, /preferred \? \(zh \? '已开启' : 'Enabled'\)/);
   assert.match(page, /默认关闭/);
   // Rendered above the desktop strip settings on the monitor page.
   assert.ok(app.indexOf('<TaskbarMonitorSettings') < app.indexOf('<FloatingMonitorSettings preferences='));
@@ -42,8 +43,8 @@ test('custom colours: settings rows, native fallback palette and menu entry stay
   // Default swatches mirror the native Palette::metric values.
   const palette = core.slice(core.indexOf('TASKBAR_WIDGET_PALETTE'), core.indexOf('TASKBAR_BACKGROUNDS'));
   for (const hex of palette.match(/#[0-9a-f]{6}/g)) assert.ok(native.includes(`rgb(0x${hex.slice(1)})`), hex);
-  assert.match(native, /COLOR_ITEMS: \[&str; 6\] = \[\s*"generation",\s*"prefill",\s*"gpu",\s*"vram",\s*"temperature",\s*"context",?\s*\]/);
-  assert.match(core, /TASKBAR_WIDGET_COLOR_ITEMS[^=]*= \['generation', 'prefill', 'gpu', 'vram', 'temperature', 'context'\]/);
+  assert.match(native, /COLOR_ITEMS: \[&str; 7\] = \[\s*"generation",\s*"prefill",\s*"gpu",\s*"vram",\s*"cpu",\s*"temperature",\s*"context",?\s*\]/);
+  assert.match(core, /TASKBAR_WIDGET_COLOR_ITEMS[^=]*= \['generation', 'prefill', 'gpu', 'vram', 'cpu', 'temperature', 'context'\]/);
   assert.match(native, /t\("自定义颜色…", "Customize colors…"\)/);
   assert.match(page, /id="settings-taskbar-colors"/);
   assert.match(page, /'恢复默认'/);
@@ -69,6 +70,7 @@ test('settings preview stacks both speeds with the native glyph outlines', () =>
   };
   assert.ok(page.includes(`generation: '${outline('Spark')}'`), outline('Spark'));
   assert.ok(page.includes(`prefill: '${outline('Arrow')}'`), outline('Arrow'));
+  assert.ok(page.includes(`cpu: '${outline('Chip')}'`), outline('Chip'));
 });
 
 test('text rows setting offers auto, one and two rows and the one-row preview drops captions', () => {

@@ -136,7 +136,9 @@ export function FloatingTelemetryWindow() {
   const stale = !!data && now - data.sampledAt > Math.max(15000, pollingInterval(settings?.pollInterval) * 3);
   const valid = !!data && !snapshot.isError && !stale && !waitingForSample;
   const online = valid && data.phase === 'online';
-  const metric = online && data.metrics ? normalizeMetrics(data.metrics) : undefined;
+  // System CPU is filled independently of the official service; keep hardware
+  // readings available when the process is stopped or no model is loaded.
+  const metric = valid && data.metrics ? normalizeMetrics(data.metrics) : undefined;
   const displayMetric = modelTelemetry(metric, typeof data?.health?.loaded === 'boolean' ? data.health.loaded : undefined);
   const historyIdentity = [data?.profile?.id, data?.process?.pid, data?.process?.startedAt, data?.process?.creationTime, metric?.model].join('|');
   const fresh = valid && !paused && !waitingForSample;

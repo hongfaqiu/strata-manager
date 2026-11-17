@@ -12,6 +12,7 @@ fn busy() -> Reading<'static> {
         gpu: Some(76.4),
         vram_used: Some(19.8),
         vram_total: Some(24.0),
+        cpu: Some(23.0),
         temperature: Some(52.0),
         context_used: Some(12_400.0),
         context_total: Some(32_768.0),
@@ -447,8 +448,9 @@ fn value_colours_reach_4_5_to_1_on_win11_light_and_dark_taskbars() {
     for (dark, background) in [(false, TASKBAR_LIGHT), (true, TASKBAR_DARK)] {
         let palette = Palette::new(dark);
         let mut colours = vec![palette.text, palette.muted];
-        colours
-            .extend(["generation", "prefill", "gpu", "vram", "context"].map(|m| palette.metric(m)));
+        colours.extend(
+            ["generation", "prefill", "gpu", "vram", "cpu", "context"].map(|m| palette.metric(m)),
+        );
         colours.extend([40.0, 70.0, 90.0].map(|t| palette.temperature(t)));
         colours.extend(
             [
@@ -466,11 +468,11 @@ fn value_colours_reach_4_5_to_1_on_win11_light_and_dark_taskbars() {
             assert!(ratio >= 4.5, "{colour:?} on {background:?}: {ratio:.2}");
         }
         let metrics: std::collections::HashSet<_> =
-            ["generation", "prefill", "gpu", "vram", "context"]
+            ["generation", "prefill", "gpu", "vram", "cpu", "context"]
                 .map(|m| palette.metric(m))
                 .into_iter()
                 .collect();
-        assert_eq!(metrics.len(), 5);
+        assert_eq!(metrics.len(), 6);
     }
 }
 
@@ -1190,4 +1192,48 @@ fn rows_menu_switches_and_keeps_everything_else() {
     );
     assert_eq!(apply(&next, 301), MenuAction::Nothing);
     assert_eq!(apply(&next, 303), MenuAction::Nothing);
+}
+
+#[test]
+fn cpu_is_an_optional_item_and_keeps_a_measured_zero() {
+    let prefs = WidgetPrefs::normalize(&json!({"items":["cpu","bogus"],"ring":"off"}));
+    assert_eq!(prefs.items, vec!["cpu".to_string()]);
+    assert!(prefs.has("cpu"));
+    let palette = Palette::new(true);
+    let zero = Reading {
+        cpu: Some(0.0),
+        tone: Tone::Stopped,
+        state: "未启动",
+        ..Reading::default()
+    };
+    let layout = layout(&prefs, false, 96, 48, &zero, &palette);
+    assert!(texts(&layout).contains(&"0"));
+    let unknown = Reading {
+        cpu: None,
+        tone: Tone::Stopped,
+        state: "未启动",
+        ..Reading::default()
+    };
+    let layout = layout(&prefs, false, 96, 48, &unknown, &palette);
+    assert!(texts(&layout).iter().any(|text| *text == DASH));
+    assert_eq!(item_menu_label("cpu", false), "CPU 占用");
+    assert_eq!(item_menu_label("cpu", true), "CPU usage");
+}
+
+#[test]
+fn one_row_cpu_uses_the_chip_glyph() {
+    let prefs = WidgetPrefs {
+        rows: "single".into(),
+        items: vec!["cpu".into()],
+        ring: "off".into(),
+        colors: Default::default(),
+    };
+    let layout = layout(&prefs, false, 96, 48, &busy(), &Palette::new(true));
+    assert!(layout.ops.iter().any(|op| matches!(
+        op,
+        Op::Glyph {
+            shape: Glyph::Chip,
+            ..
+        }
+    )));
 }

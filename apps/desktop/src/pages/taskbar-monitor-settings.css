@@ -23,6 +23,7 @@
 .taskbar-widget-preview-metric[data-item=prefill]{--metric:#60c8fa}
 .taskbar-widget-preview-metric[data-item=gpu]{--metric:#fb923c}
 .taskbar-widget-preview-metric[data-item=vram]{--metric:#c4a5fd}
+.taskbar-widget-preview-metric[data-item=cpu]{--metric:#e879f9}
 .taskbar-widget-preview-metric[data-item=temperature]{--metric:#4ade80}
 .taskbar-widget-preview-metric[data-item=status]{--metric:var(--tone)}
 .taskbar-widget-preview-value{color:var(--metric);font-size:14px;font-weight:400;font-variant-numeric:tabular-nums}

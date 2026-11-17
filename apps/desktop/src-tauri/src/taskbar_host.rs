@@ -486,7 +486,9 @@ unsafe extern "system" fn window_proc(
                 return LRESULT(0);
             }
             WM_CLOSE => {
-                let _ = output(&HostFrame::Close {});
+                // Unexpected close (not the right-click menu). The parent remounts
+                // without writing taskbarEnabled off.
+                let _ = output(&HostFrame::Detached {});
                 return LRESULT(0);
             }
             _ => {}
@@ -502,6 +504,7 @@ fn reading(sample: &Sample) -> widget::Reading<'_> {
         gpu: sample.values[2],
         vram_used: sample.values[3],
         vram_total: sample.vram_total,
+        cpu: sample.values[4],
         temperature: sample.values[6],
         context_used: sample.context_used,
         context_total: sample.context_total,
@@ -1221,7 +1224,7 @@ unsafe fn attach(
                 }
             }
             if occupied.len() == previous_count {
-                return Err("无法确认任务栏数值条可见，保留桌面浮条".into());
+                return Err("无法确认任务栏数值条可见".into());
             }
             continue;
         }
@@ -1234,7 +1237,7 @@ unsafe fn attach(
             blockers,
         });
     }
-    Err("任务栏空位持续被其它窗口遮挡，保留桌面浮条".into())
+    Err("任务栏空位持续被其它窗口遮挡".into())
 }
 
 fn within_restart_grace(lost_since: Option<Instant>) -> bool {
@@ -1618,13 +1621,16 @@ unsafe fn run_inner() -> Result<(), String> {
                         ready = true;
                     }
                 }
-                Err(error) if error.contains("自动隐藏") && attachment.is_some() => {}
+                Err(error) if error.contains("自动隐藏") => {}
                 Err(_) if within_restart_grace(lost_since) => {}
                 Err(error) => break 'main Err(error),
             }
         }
         if pending.is_some_and(|(_, since)| since.elapsed() > Duration::from_secs(3)) {
-            break Err("任务栏 UI Automation 检查超时，已停止挂载".into());
+            // A stuck UI Automation provider must not exit the host. Explorer
+            // restart grace only covers returned inspect errors; this timeout
+            // used to tear the process down even during that window.
+            pending = None;
         }
         if let Some(current) = &attachment {
             if shell().and_then(|hwnd| identity(hwnd)).ok() != Some(current.shell) {
@@ -1773,5 +1779,19 @@ mod tests {
         }
         assert_eq!(incoming.sample.unwrap().values[0], Some(9999.));
         assert_eq!(incoming.preferences.unwrap().font_size, 12 + 9999 % 13);
+    }
+
+    #[test]
+    fn inspect_timeout_and_auto_hide_do_not_exit_the_host() {
+        let source = include_str!("taskbar_host.rs").replace("\r\n", "\n");
+        let end = source.find("#[cfg(test)]\nmod tests").unwrap();
+        let source = &source[..end];
+        assert!(!source.contains("任务栏 UI Automation 检查超时，已停止挂载"));
+        assert!(source.contains("Err(error) if error.contains(\"自动隐藏\") => {}"));
+        assert!(!source.contains("自动隐藏\") && attachment.is_some()"));
+        assert!(source.contains("HostFrame::Detached"));
+        assert!(source.contains("widget::MenuAction::Close =>"));
+        assert!(source.contains("output(&HostFrame::Close {})"));
+        assert!(!source.contains("保留桌面浮条"));
     }
 }
