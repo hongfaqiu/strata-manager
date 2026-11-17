@@ -2094,6 +2094,11 @@ mod tests {
         let paused = retry_paused_message("检查超时", false);
         assert!(paused.contains("已暂停自动重试"));
         assert!(paused.contains("重新挂载"));
+        let waiting = retry_wait_message("inspect timeout", 2, 4, true);
+        assert!(waiting.contains("Remounting in 4s"));
+        assert!(waiting.contains("attempt 2 of 8"));
+        let waiting = retry_wait_message("检查超时", 2, 4, false);
+        assert!(waiting.contains("将在 4 秒后"));
         let paused = retry_paused_message("inspect timeout", true);
         assert!(paused.contains("Automatic remount paused"));
         assert!(paused.contains("Remount"));

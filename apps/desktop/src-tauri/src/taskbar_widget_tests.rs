@@ -695,6 +695,7 @@ fn menu_lists_open_customize_and_close_with_checked_state() {
             "预填充速度",
             "GPU 负载",
             "显存占用",
+            "CPU 占用",
             "GPU 温度",
             "服务状态"
         ]
@@ -714,10 +715,11 @@ fn menu_lists_open_customize_and_close_with_checked_state() {
     assert!(checked.contains(&(200, true)) && checked.contains(&(201, false)));
     assert!(checked.contains(&(202, false)) && checked.contains(&(203, false)));
     // Temperature appears only when available or already selected.
+    // IDs follow ITEMS: generation=100 … cpu=104, temperature=105, status=106.
     assert!(!ids(&menu(&WidgetPrefs::default(), true, false))
         .iter()
-        .any(|(id, _)| *id == 104));
-    assert!(ids(&menu(&prefs("gpu", &["temperature"]), true, false)).contains(&(104, true)));
+        .any(|(id, _)| *id == 105));
+    assert!(ids(&menu(&prefs("gpu", &["temperature"]), true, false)).contains(&(105, true)));
 }
 
 #[test]
@@ -743,7 +745,7 @@ fn menu_commands_toggle_items_switch_ring_and_change_width() {
     assert_eq!(apply(&base, MENU_SETTINGS), MenuAction::Settings);
     assert_eq!(apply(&base, MENU_COLORS), MenuAction::Colors);
     assert_eq!(apply(&base, 0), MenuAction::Nothing);
-    assert_eq!(apply(&base, 106), MenuAction::Nothing);
+    assert_eq!(apply(&base, 107), MenuAction::Nothing);
     let MenuAction::Update(context) = apply(&base, 202) else {
         panic!("context ring")
     };
@@ -1097,6 +1099,8 @@ fn single_row_drops_captions_and_keeps_every_value_inside_the_strip() {
                 "%",
                 "19.8",
                 "GB",
+                "23",
+                "%",
                 "52",
                 "℃",
                 "运行中"
@@ -1122,7 +1126,7 @@ fn single_row_drops_captions_and_keeps_every_value_inside_the_strip() {
     }
     assert_eq!(
         glyphs(&layout(&all, false, 96, 32, &busy(), &Palette::new(true))).len(),
-        2
+        3
     );
 }
 
@@ -1138,7 +1142,7 @@ fn single_row_widths_for_typical_sets() {
             &["generation", "prefill", "gpu", "temperature"],
             195,
         ),
-        ("gpu", &ITEMS, 270),
+        ("gpu", &ITEMS, 310),
     ];
     for (ring, items, limit) in sets {
         let single = size(&rows(ring, items, "single"), false, 96, 32);
@@ -1216,7 +1220,7 @@ fn cpu_is_an_optional_item_and_keeps_a_measured_zero() {
         ..Reading::default()
     };
     let unknown_layout = layout(&prefs, false, 96, 48, &unknown, &palette);
-    assert!(texts(&unknown_layout).iter().any(|text| *text == DASH));
+    assert!(texts(&unknown_layout).contains(&DASH));
     assert_eq!(item_menu_label("cpu", false), "CPU 占用");
     assert_eq!(item_menu_label("cpu", true), "CPU usage");
 }
