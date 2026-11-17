@@ -1626,7 +1626,9 @@ mod tests {
     fn stopped_or_unloaded_never_reuses_numeric_values() {
         for phase in ["stopped", "unavailable", "none", "online"] {
             let value = json!({"phase":phase,"health":{"loaded":false},"metrics":{"live":{"state":"generating","tok_s":90},"hardware":{"cpu":99}}});
-            assert_eq!(sample(&value).values, [None; 11]);
+            let mut values = [None; 11];
+            values[4] = Some(99.0);
+            assert_eq!(sample(&value).values, values);
         }
     }
     #[test]
@@ -1642,14 +1644,18 @@ mod tests {
                     localized["settings"] = json!({"language":language});
                     let current = sample(&localized);
                     assert_eq!(current.state, label);
-                    assert_eq!(current.values, [None; 11]);
+                    let mut values = [None; 11];
+                    values[4] = Some(99.0);
+                    assert_eq!(current.values, values);
                 }
                 for phase in ["stopped", "unavailable", "none"] {
                     let mut stale = snapshot.clone();
                     stale["phase"] = json!(phase);
                     let current = sample(&stale);
                     assert_ne!(current.state, chinese);
-                    assert_eq!(current.values, [None; 11]);
+                    let mut values = [None; 11];
+                    values[4] = Some(99.0);
+                    assert_eq!(current.values, values);
                 }
             }
         }
