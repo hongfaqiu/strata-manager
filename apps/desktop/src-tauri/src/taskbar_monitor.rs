@@ -590,11 +590,11 @@ fn retry_wait_message(reason: &str, attempt: u32, delay_secs: u64, english: bool
 fn retry_paused_message(reason: &str, english: bool) -> String {
     if english {
         format!(
-            "Taskbar monitor stopped: {reason}. Automatic remount paused so a persistent failure stays visible. Turn the setting off and on to try again."
+            "Taskbar monitor stopped: {reason}. Automatic remount paused so a persistent failure stays visible. Click Remount, or turn the setting off and on, to try again."
         )
     } else {
         format!(
-            "任务栏监控已停止：{reason}。已暂停自动重试，以免持续故障被忽略。可在设置中关闭后再打开以再次尝试。"
+            "任务栏监控已停止：{reason}。已暂停自动重试，以免持续故障被忽略。请点击「重新挂载」，或先关闭再打开开关。"
         )
     }
 }
@@ -2027,6 +2027,12 @@ mod tests {
         assert!(!should_auto_retry(false, 9));
         assert!(!should_auto_retry(true, 1));
         assert!(!should_auto_retry(true, 8));
+        let paused = retry_paused_message("检查超时", false);
+        assert!(paused.contains("已暂停自动重试"));
+        assert!(paused.contains("重新挂载"));
+        let paused = retry_paused_message("inspect timeout", true);
+        assert!(paused.contains("Automatic remount paused"));
+        assert!(paused.contains("Remount"));
     }
 
     #[test]

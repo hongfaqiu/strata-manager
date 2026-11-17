@@ -27,6 +27,9 @@ test('taskbar monitor toggle follows the saved preference, not only runtime acti
   assert.match(page, /'Taskbar monitor \(Windows\)'/);
   assert.match(page, /checked=\{preferred\}/);
   assert.match(page, /preferred \? \(zh \? '已开启' : 'Enabled'\)/);
+  assert.match(page, /canRemount = supported && preferred && !active && !!onEnabledChange/);
+  assert.match(page, /zh \? '重新挂载' : 'Remount'/);
+  assert.match(page, /onClick=\{\(\) => void toggle\(true\)\}/);
   assert.match(page, /默认关闭/);
   // Rendered above the desktop strip settings on the monitor page.
   assert.ok(app.indexOf('<TaskbarMonitorSettings') < app.indexOf('<FloatingMonitorSettings preferences='));

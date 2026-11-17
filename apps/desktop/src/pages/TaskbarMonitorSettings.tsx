@@ -166,10 +166,14 @@ export function TaskbarMonitorSettings({ enabled, widget, desktop, language, mod
     : preferred && modeStatus?.message ? modeStatus.message
     : zh ? '默认关闭。开启后显示在通知区左侧；右键可调整内容或关闭。' : 'Off by default. Shown left of the notification area; right-click it to adjust or close.';
   const switchLabel = active ? (zh ? '开' : 'On') : preferred ? (zh ? '已开启' : 'Enabled') : (zh ? '关' : 'Off');
+  // Preference stays on after a failure or a shortcut hide, so the toggle
+  // cannot be flipped "on" again; this is the explicit remount control.
+  const canRemount = supported && preferred && !active && !!onEnabledChange;
   return <Panel className="taskbar-monitor-settings" title={zh ? '任务栏监控（Windows）' : 'Taskbar monitor (Windows)'} action={
     <div className="taskbar-monitor-settings-switch">
       <span>{switchLabel}</span>
       {pending && <LoaderCircle size={13} className="spin" aria-hidden="true"/>}
+      {canRemount && <button type="button" className="taskbar-monitor-settings-remount" disabled={pending} onClick={() => void toggle(true)}>{zh ? '重新挂载' : 'Remount'}</button>}
       <Toggle ariaLabel={zh ? '任务栏监控' : 'Taskbar monitor'} checked={preferred} disabled={!supported || pending || !onEnabledChange} onCheckedChange={next => void toggle(next)}/>
     </div>
   }>

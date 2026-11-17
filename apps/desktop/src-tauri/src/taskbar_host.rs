@@ -1366,7 +1366,10 @@ unsafe fn run_inner() -> Result<(), String> {
     let (inspect_tx, inspect_rx) = mpsc::sync_channel::<u64>(1);
     let (result_tx, result_rx) = mpsc::sync_channel::<(u64, Result<Inspection, String>)>(1);
     // UIA runs on a separate MTA thread so querying the taskbar cannot deadlock
-    // our child window's message pump. A stuck provider expires the host below.
+    // our child window's message pump. There is only this one worker; a stuck
+    // inspect holds it, but a timeout only clears the pending generation and
+    // retries on the same capacity-1 channel. It does not spawn another thread
+    // or exit the host.
     std::thread::spawn(move || {
         if CoInitializeEx(None, COINIT_MULTITHREADED).is_err() {
             let _ = result_tx.send((1, Err("无法初始化 UI Automation".into())));
@@ -1793,5 +1796,21 @@ mod tests {
         assert!(source.contains("widget::MenuAction::Close =>"));
         assert!(source.contains("output(&HostFrame::Close {})"));
         assert!(!source.contains("保留桌面浮条"));
+        // One inspect worker for the life of the host; timeouts must not spawn more.
+        assert_eq!(
+            source
+                .matches("while let Ok(generation) = inspect_rx.recv()")
+                .count(),
+            1
+        );
+        assert_eq!(
+            source
+                .matches(
+                    "std::thread::spawn(move || {
+        if CoInitializeEx"
+                )
+                .count(),
+            1
+        );
     }
 }
