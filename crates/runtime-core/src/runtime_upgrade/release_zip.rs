@@ -34,6 +34,8 @@ mod local_archive_tests;
 mod package_tests;
 #[cfg(test)]
 mod source_archive_tests;
+#[cfg(test)]
+mod source_layout_tests;
 pub use download_check::{
     resolve_release_download_asset, resolve_release_download_asset_for, test_release_download,
     RuntimeZipDownloadCheckResult,
@@ -1283,6 +1285,92 @@ fn source_file(relative: &str) -> bool {
     }
 }
 
+/// How an official source ZIP arranges its tree (below the single top-level folder).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SourceLayout {
+    /// Strata ≤ 0.2.15: `setup.py`, `serve/`, `strata_control/`, `requirements.txt` and the
+    /// engine's `CMakeLists.txt`, `src/`, `include/`, … all at the root.
+    Flat,
+    /// Strata 0.2.16+ (upstream `tools/layout/move_0216.py`): the Terminal in `terminal/`
+    /// (`setup.py`, `serve/`, `strata_control/`, `strata_cli/`, `tools/`, `data/`, `ref/`,
+    /// `requirements.txt`), the engine sources in `engine/` (`CMakeLists.txt`, `src/`,
+    /// `include/`, `cmake/`, `sycl/`, `third_party/`), `docs/` and the start scripts at the
+    /// root, and the repository's own checks and packaging in a root `tools/`.
+    Split,
+}
+
+/// The layout named by the archive's own entries (relative to the top-level folder): a
+/// root `setup.py` + `serve/server.py` is the flat tree; `terminal/setup.py` +
+/// `terminal/serve/server.py` + `engine/CMakeLists.txt` without a root `setup.py` is
+/// the 0.2.16 split tree. Anything else stays `Flat`, whose required-file check then fails.
+fn detect_source_layout<'a>(names: impl IntoIterator<Item = &'a str>) -> SourceLayout {
+    let (mut flat, mut terminal, mut server, mut engine) = (false, false, false, false);
+    for name in names {
+        match name {
+            "setup.py" => flat = true,
+            "terminal/setup.py" => terminal = true,
+            "terminal/serve/server.py" => server = true,
+            "engine/CMakeLists.txt" => engine = true,
+            _ => {}
+        }
+    }
+    if !flat && terminal && server && engine {
+        SourceLayout::Split
+    } else {
+        SourceLayout::Flat
+    }
+}
+
+/// The install-relative path a source ZIP entry is published to, or None when the entry is
+/// not runtime source. Both layouts install into the same flat tree that Manager, its
+/// launchers and upstream `setup.py` (`engine_src()`: "ROOT itself in a tree that has them
+/// there") all accept, so an install keeps one shape across the 0.2.16 move:
+/// `terminal/X` → `X`, `engine/X` → `X` (same directory allow-list as the flat tree), and the
+/// root start scripts, README, LICENSE and `docs/` as they are. The split tree's root
+/// `tools/` (repository checks, packaging) and `app/` are not runtime source.
+fn source_target(layout: SourceLayout, relative: &str) -> Option<String> {
+    match layout {
+        SourceLayout::Flat => source_file(relative).then(|| relative.to_owned()),
+        SourceLayout::Split => split_source_target(relative),
+    }
+}
+
+fn split_source_target(relative: &str) -> Option<String> {
+    if let Some(rest) = relative.strip_prefix("terminal/") {
+        let mut parts = rest.split('/');
+        let first = parts.next().unwrap_or_default();
+        let keep = if parts.next().is_some() {
+            matches!(
+                first,
+                "serve" | "tools" | "data" | "ref" | "strata_control" | "strata_cli"
+            )
+        } else {
+            rest.ends_with(".py") || rest == "requirements.txt"
+        };
+        return keep.then(|| rest.to_owned());
+    }
+    if let Some(rest) = relative.strip_prefix("engine/") {
+        let mut parts = rest.split('/');
+        let first = parts.next().unwrap_or_default();
+        let keep = if parts.next().is_some() {
+            matches!(first, "src" | "include" | "cmake" | "sycl")
+                || rest.starts_with("third_party/ggml/")
+        } else {
+            rest == "CMakeLists.txt"
+        };
+        return keep.then(|| rest.to_owned());
+    }
+    let keep = if relative.contains('/') {
+        relative.starts_with("docs/")
+    } else {
+        matches!(
+            relative,
+            "START-HERE.bat" | "SETUP.bat" | "UPDATE.bat" | "setup.sh" | "update.sh" | "LICENSE"
+        ) || relative.starts_with("README")
+    };
+    keep.then(|| relative.to_owned())
+}
+
 /// Windows Win32 APIs without long-path awareness fail around MAX_PATH (260) with
 /// ERROR_PATH_NOT_FOUND (3) or ERROR_FILENAME_EXCED_RANGE (206). HIP engine ZIPs
 /// ship deep `rocm/bin/hipblaslt/...` names; AppData work dirs tip over the limit.
@@ -1574,8 +1662,21 @@ fn extract(
     if zip.len() > 30_000 {
         return Err("ZIP文件数超过安全上限".into());
     }
+    let layout = if source {
+        let mut leaves = Vec::with_capacity(zip.len());
+        for i in 0..zip.len() {
+            let file = zip.by_index_raw(i).map_err(|e| e.to_string())?;
+            if let Some((_, leaf)) = file.name().split_once('/') {
+                leaves.push(leaf.to_owned());
+            }
+        }
+        detect_source_layout(leaves.iter().map(String::as_str))
+    } else {
+        SourceLayout::Flat
+    };
     let mut prefix = None;
     let mut names = HashSet::new();
+    let mut targets = HashSet::new();
     let mut entries = Vec::new();
     let mut total = 0u64;
     for i in 0..zip.len() {
@@ -1611,13 +1712,23 @@ fn extract(
         if total > MAX_EXPANDED || file.size() > 1024 * 1024 * 1024 {
             return Err("ZIP展开体积超过安全上限".into());
         }
-        if source && !source_file(&relative) {
-            continue;
-        }
-        // The engine ZIP must not supply configs, models, Python or unknown root files.
-        if !source && !engine_file_allowed(&relative) {
-            return Err(format!("引擎ZIP含未识别的运行文件：{relative}"));
-        }
+        let relative = if source {
+            let Some(target) = source_target(layout, &relative) else {
+                continue;
+            };
+            // The split tree folds terminal/ and engine/ into one root: never let two
+            // entries land on the same file.
+            if !targets.insert(target.to_ascii_lowercase()) {
+                return Err("ZIP包含重复或大小写冲突路径".into());
+            }
+            target
+        } else {
+            // The engine ZIP must not supply configs, models, Python or unknown root files.
+            if !engine_file_allowed(&relative) {
+                return Err(format!("引擎ZIP含未识别的运行文件：{relative}"));
+            }
+            relative
+        };
         entries.push((i, relative, file.size()));
     }
     let mut files = Vec::new();
@@ -1628,6 +1739,8 @@ fn extract(
         publish_new_file_from_reader(&target, &mut entry, size, &check)?;
         files.push(name);
     }
+    // Both source layouts are published flat (see `source_target`), so the same four
+    // files prove a complete Terminal + engine source tree.
     let required = if source {
         vec![
             "setup.py",
