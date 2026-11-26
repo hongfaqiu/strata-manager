@@ -1594,8 +1594,8 @@ fn publish_install(
 ) -> Result<(), String> {
     check_install_claim(database, claim)?;
     let repository = claim.destination.join("repository");
-    if !repository.join("setup.py").is_file()
-        || !repository.join("serve/server.py").is_file()
+    // A clone of Strata 0.2.16+ keeps setup.py and serve/ in terminal/ (#243).
+    if crate::discovery::resolve_runtime_root(&repository).is_none()
         || !repository.join(".git").is_dir()
     {
         return Err("Git 命令结束但官方运行环境文件缺失，未发布安装目录".into());
@@ -2102,10 +2102,9 @@ pub fn runtime_dir(profile: &ServiceProfile) -> Result<PathBuf, String> {
         return Err("运行环境目录必须为绝对路径".into());
     }
     let path = dunce::canonicalize(path).map_err(|e| format!("运行环境目录不存在: {e}"))?;
-    if !path.join("setup.py").is_file() || !path.join("serve/server.py").is_file() {
-        return Err("不是可识别的 Strata 安装目录（需要 setup.py 和 serve/server.py）".into());
-    }
-    Ok(path)
+    // A 0.2.16+ source checkout runs from its terminal/ folder (#243).
+    crate::discovery::resolve_runtime_root(&path)
+        .ok_or_else(|| "不是可识别的 Strata 安装目录（需要 setup.py 和 serve/server.py）".into())
 }
 
 pub(crate) fn acquire_runtime_lease(
@@ -2582,6 +2581,36 @@ sys.exit(7)
         std::fs::write(external.join("user.txt"), b"user").unwrap();
         assert!(prepare_install(&database, &external).is_err());
         assert_eq!(std::fs::read(external.join("user.txt")).unwrap(), b"user");
+    }
+
+    #[test]
+    fn install_publishes_a_split_layout_clone_and_runtime_dir_uses_its_terminal() {
+        let temp = tempfile::tempdir().unwrap();
+        let database = database();
+        let claim = prepare_install(&database, &temp.path().join("install")).unwrap();
+        let repo = claim.destination.join("repository");
+        std::fs::create_dir_all(repo.join("terminal/serve")).unwrap();
+        std::fs::create_dir_all(repo.join("engine")).unwrap();
+        std::fs::create_dir(repo.join(".git")).unwrap();
+        std::fs::write(repo.join("terminal/setup.py"), b"fixture").unwrap();
+        std::fs::write(repo.join("terminal/serve/server.py"), b"fixture").unwrap();
+        // Without the engine sources a terminal/ folder is not a Strata checkout.
+        assert!(publish_install(&database, &claim).is_err());
+        std::fs::write(repo.join("engine/CMakeLists.txt"), b"fixture").unwrap();
+        publish_install(&database, &claim).unwrap();
+        let profile = ServiceProfile {
+            id: "split".into(),
+            name: "Strata".into(),
+            base_url: "http://127.0.0.1:8080".into(),
+            install_dir: claim.destination.to_string_lossy().into(),
+            python_path: String::new(),
+            config_path: String::new(),
+            managed: true,
+        };
+        assert_eq!(
+            runtime_dir(&profile).unwrap(),
+            dunce::canonicalize(claim.destination.join("terminal")).unwrap()
+        );
     }
 
     #[test]

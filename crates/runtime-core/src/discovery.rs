@@ -1058,6 +1058,22 @@ fn is_runtime_root(root: &Path) -> bool {
     root.join("setup.py").is_file() && root.join("serve/server.py").is_file()
 }
 
+/// The runtime root of a folder: the folder itself when it holds `setup.py` and
+/// `serve/server.py` (every install Manager publishes, and checkouts up to Strata
+/// 0.2.15); for a 0.2.16+ source checkout (`terminal/` beside `engine/CMakeLists.txt`,
+/// upstream `tools/layout/move_0216.py`) its `terminal/` folder, where upstream's own
+/// `START-HERE.bat` / `setup.sh` run `setup.py` and `serve/server.py` resolves its ROOT.
+pub(crate) fn resolve_runtime_root(folder: &Path) -> Option<PathBuf> {
+    if is_runtime_root(folder) {
+        return Some(folder.to_owned());
+    }
+    let terminal = folder.join("terminal");
+    (folder.join("engine/CMakeLists.txt").is_file()
+        && !terminal.is_symlink()
+        && is_runtime_root(&terminal))
+    .then_some(terminal)
+}
+
 fn is_named_data_directory(root: &Path) -> bool {
     root.file_name()
         .and_then(|name| name.to_str())
@@ -1207,10 +1223,13 @@ fn nearby_install_roots(data_dir: &Path) -> Vec<PathBuf> {
         if installs.len() >= MAX_DIRECTORIES {
             break;
         }
-        let Ok(root) = canonical_local(&path) else {
+        let Some(root) = canonical_local(&path)
+            .ok()
+            .and_then(|path| resolve_runtime_root(&path))
+        else {
             continue;
         };
-        if is_runtime_root(&root) && seen.insert(path_key(&root)) {
+        if seen.insert(path_key(&root)) {
             installs.push(root);
         }
     }
@@ -1285,7 +1304,7 @@ fn expand_user_directory(directory: &Path) -> ExpandedUserDirectory {
     let Ok(root) = canonical_local(directory) else {
         return empty;
     };
-    if is_runtime_root(&root) {
+    if let Some(root) = resolve_runtime_root(&root) {
         return ExpandedUserDirectory {
             install_roots: vec![root],
             external_configs: Vec::new(),
@@ -1528,8 +1547,11 @@ fn expand_runtime_directories(mut roots: Vec<PathBuf>) -> Vec<PathBuf> {
         };
         for entry in entries.take(MAX_RUNTIME_ENTRIES).flatten() {
             let path = entry.path();
-            if !path.is_symlink() && path.is_dir() && is_runtime_root(&path) {
-                children.push(path);
+            if path.is_symlink() || !path.is_dir() {
+                continue;
+            }
+            if let Some(root) = resolve_runtime_root(&path) {
+                children.push(root);
             }
             if children.len() >= MAX_RUNTIME_CHILDREN {
                 break;
@@ -1597,7 +1619,8 @@ fn runtime_root(profile: &ServiceProfile) -> PathBuf {
     {
         return cwd;
     }
-    root
+    // A profile saved for a 0.2.16+ clone's root runs from its terminal/ folder.
+    resolve_runtime_root(&root).unwrap_or(root)
 }
 
 pub fn discover_runtimes(profiles: &[ServiceProfile]) -> Vec<DetectedRuntime> {
@@ -1667,10 +1690,10 @@ fn inspect_runtime_directories(
         let Ok(root) = canonical_local(&root) else {
             continue;
         };
-        if !seen.insert(path_key(&root))
-            || !root.join("setup.py").is_file()
-            || !root.join("serve/server.py").is_file()
-        {
+        let Some(root) = resolve_runtime_root(&root) else {
+            continue;
+        };
+        if !seen.insert(path_key(&root)) {
             continue;
         }
         let registered = profiles
@@ -2607,12 +2630,12 @@ pub fn discover_local(
     let mut cache = PythonCache::default();
     let mut candidates = Vec::new();
     for (root, source) in roots.into_iter().take(128) {
-        let Ok(root) = canonical_local(&root) else {
+        let Some(root) = canonical_local(&root)
+            .ok()
+            .and_then(|root| resolve_runtime_root(&root))
+        else {
             continue;
         };
-        if !root.join("setup.py").is_file() || !root.join("serve/server.py").is_file() {
-            continue;
-        }
         let mut paths = prioritized_config_paths(&root, profiles, &hints);
         if let Some(extras) = extras_by_install.remove(&path_key(&root)) {
             for (config, _) in extras.into_iter().rev() {
@@ -4670,6 +4693,50 @@ mod tests {
             Some("0.2.0-beta")
         );
         assert_eq!(product_version("PRODUCT_VERSION = version()"), None);
+    }
+
+    /// A Strata 0.2.16+ git checkout (upstream `tools/layout/move_0216.py`): the Terminal in
+    /// `terminal/`, the engine sources in `engine/`.
+    fn split_checkout(root: &Path) {
+        fs::create_dir_all(root.join("terminal/serve")).unwrap();
+        fs::create_dir_all(root.join("engine")).unwrap();
+        fs::write(root.join("terminal/setup.py"), b"# fixture").unwrap();
+        fs::write(root.join("terminal/serve/server.py"), b"# fixture").unwrap();
+        fs::write(root.join("engine/CMakeLists.txt"), b"# fixture").unwrap();
+        fs::write(root.join("START-HERE.bat"), b"rem fixture").unwrap();
+    }
+
+    #[test]
+    fn split_checkout_resolves_to_its_terminal_folder_and_flat_trees_stay() {
+        let temp = tempfile::tempdir().unwrap();
+        let split = temp.path().join("runtimes/Strata-split");
+        split_checkout(&split);
+        assert_eq!(resolve_runtime_root(&split), Some(split.join("terminal")));
+        assert_eq!(
+            resolve_runtime_root(&split.join("terminal")),
+            Some(split.join("terminal"))
+        );
+        // terminal/ alone, without the engine sources beside it, is not a checkout.
+        let lone = temp.path().join("lone");
+        fs::create_dir_all(lone.join("terminal/serve")).unwrap();
+        fs::write(lone.join("terminal/setup.py"), b"# fixture").unwrap();
+        fs::write(lone.join("terminal/serve/server.py"), b"# fixture").unwrap();
+        assert_eq!(resolve_runtime_root(&lone), None);
+        // A flat tree (<= 0.2.15, every Manager install) is its own root.
+        let flat = temp.path().join("runtimes/Strata-flat");
+        fs::create_dir_all(flat.join("serve")).unwrap();
+        fs::write(flat.join("setup.py"), b"# fixture").unwrap();
+        fs::write(flat.join("serve/server.py"), b"# fixture").unwrap();
+        assert_eq!(resolve_runtime_root(&flat), Some(flat.clone()));
+        // The runtimes scan finds both, and a user-added checkout folder expands too.
+        let found = expand_runtime_directories(vec![temp.path().join("runtimes")]);
+        assert!(found.contains(&split.join("terminal")), "{found:?}");
+        assert!(found.contains(&flat), "{found:?}");
+        let expanded = expand_user_directory(&split);
+        assert_eq!(
+            expanded.install_roots,
+            vec![canonical_local(&split.join("terminal")).unwrap()]
+        );
     }
 
     #[test]
