@@ -366,12 +366,21 @@ fn engine_build_json_candidates(root: &Path, exe: Option<&Path>) -> Vec<PathBuf>
     paths
 }
 
-/// Directories that may hold the installed engine package (parents of BUILD.json candidates).
+/// Directories that may hold the installed engine package (parents of BUILD.json candidates),
+/// then, for an upstream Control folder, the component package its run configs start (#241).
 pub(crate) fn engine_package_dirs(root: &Path, exe: Option<&Path>) -> Vec<PathBuf> {
-    engine_build_json_candidates(root, exe)
+    let mut dirs: Vec<PathBuf> = engine_build_json_candidates(root, exe)
         .into_iter()
         .filter_map(|path| path.parent().map(Path::to_owned))
-        .collect()
+        .collect();
+    if let Some(folder) = crate::component_engine::control_engine(root)
+        .and_then(|engine| engine.exe.parent().map(Path::to_owned))
+    {
+        if !dirs.iter().any(|dir| path_key(dir) == path_key(&folder)) {
+            dirs.push(folder);
+        }
+    }
+    dirs
 }
 
 /// Where Intel's setup (sycl/setup_intel.py) keeps the SYCL engine's BUILD.json.
@@ -394,6 +403,9 @@ fn sycl_launcher(root: &Path, exe: &Path) -> bool {
 
 /// The engine version in the first BUILD.json that names one; a value that is not a
 /// version (`"local"`, `"?"`, a path) is skipped rather than shown or compared.
+/// An upstream Control folder (the Strata desktop app's `control\`) holds no engine: its run
+/// configs start `component:strata-engine` from the per-user component folder, so its version
+/// is that package's (#241: every model gate read "current: unknown").
 pub(crate) fn runtime_version(root: &Path, exe: Option<&Path>) -> Option<String> {
     use crate::runtime_upgrade::engine_package::valid_version;
     engine_build_json_candidates(root, exe)
@@ -406,6 +418,11 @@ pub(crate) fn runtime_version(root: &Path, exe: Option<&Path>) -> Option<String>
                 .map(str::trim)
                 .filter(|version| valid_version(version))
                 .map(str::to_owned)
+        })
+        .or_else(|| {
+            crate::component_engine::control_engine(root)
+                .map(|engine| engine.version.trim().to_owned())
+                .filter(|version| valid_version(version))
         })
 }
 
@@ -4757,6 +4774,60 @@ mod tests {
             runtime_version(&root, None).as_deref(),
             Some("0.1.44-cuda12")
         );
+    }
+
+    /// #241: the Strata desktop app's Control folder (`D:\Strata\control`) keeps no engine; the
+    /// one its run configs start is in the per-user component folder. Its detected runtime must
+    /// carry that engine's version (the NVFP4 / Qwen3.6 gates read it) and its picture reader.
+    #[test]
+    fn a_desktop_control_folder_reports_the_component_engine_version() {
+        let temp = tempfile::tempdir().unwrap();
+        let control = temp.path().join("D/Strata/control");
+        fs::create_dir_all(control.join("serve")).unwrap();
+        fs::create_dir_all(control.join("strata_control")).unwrap();
+        fs::write(control.join("setup.py"), b"# fixture").unwrap();
+        fs::write(control.join("serve/server.py"), b"# fixture").unwrap();
+        fs::write(control.join("strata.py"), b"# fixture").unwrap();
+        let components = temp.path().join("AppData/Local/Strata/components");
+        let package = components.join("engine/0.1.60-windows-x86_64-cuda");
+        fs::create_dir_all(&package).unwrap();
+        let entry = if cfg!(windows) {
+            "strata.exe"
+        } else {
+            "strata"
+        };
+        fs::write(package.join(entry), b"engine").unwrap();
+        fs::write(package.join("strata-vision.exe"), b"reader").unwrap();
+        fs::write(
+            package.join("engine-component.json"),
+            serde_json::json!({"schema_version": 2, "id": "strata-engine", "version": "0.1.60",
+                "platform": crate::component_engine::host_platform(), "backend": "cuda",
+                "entrypoint": entry, "build_id": "fixture", "files": []})
+            .to_string(),
+        )
+        .unwrap();
+        crate::component_engine::with_components_dir(&components, || {
+            assert_eq!(runtime_version(&control, None).as_deref(), Some("0.1.60"));
+            assert!(crate::engine_vision::engine_has_vision_reader(
+                &control, None
+            ));
+            // An engine inside the folder still wins over the component folder.
+            fs::create_dir_all(control.join("engine")).unwrap();
+            fs::write(
+                control.join("engine/BUILD.json"),
+                br#"{"version":"0.1.47"}"#,
+            )
+            .unwrap();
+            assert_eq!(runtime_version(&control, None).as_deref(), Some("0.1.47"));
+        });
+        // Without a component folder the version stays unknown rather than guessed.
+        let empty = temp.path().join("nothing");
+        let bare = temp.path().join("E/Strata/control");
+        fs::create_dir_all(bare.join("strata_control")).unwrap();
+        fs::write(bare.join("strata.py"), b"# fixture").unwrap();
+        crate::component_engine::with_components_dir(&empty, || {
+            assert_eq!(runtime_version(&bare, None), None);
+        });
     }
 
     #[test]

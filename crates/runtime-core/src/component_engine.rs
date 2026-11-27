@@ -222,6 +222,40 @@ pub fn resolve_in(
         })
 }
 
+/// An upstream Strata Control folder (the desktop app's `control\`, or a Control the component
+/// updater put in `<components>/control/<version>`): `strata.py` beside `strata_control/`. Its run
+/// configs name `component:strata-engine`, so its engine is never inside the folder.
+pub fn is_control_root(root: &Path) -> bool {
+    root.join("strata.py").is_file() && root.join("strata_control").is_dir()
+}
+
+/// The engine a Control folder (`is_control_root`) starts: the one Manager installed beside it,
+/// else the package upstream's server would pick from this user's component folder (a rollback
+/// pin, else the newest that fits this platform). `None` for any other folder, and when no
+/// package fits. Used for the engine version and the picture reader of such a runtime (#241).
+pub fn control_engine(root: &Path) -> Option<ComponentEngine> {
+    control_engine_in(root, components_dir().as_deref(), &host_platform())
+}
+
+fn control_engine_in(
+    root: &Path,
+    components: Option<&Path>,
+    platform: &str,
+) -> Option<ComponentEngine> {
+    if !is_control_root(root) {
+        return None;
+    }
+    managed_package(root, platform).or_else(|| {
+        resolve_in(
+            components?,
+            &format!("{REFERENCE_PREFIX}{COMPONENT_ID}"),
+            None,
+            platform,
+        )
+        .ok()
+    })
+}
+
 /// Where the engine Manager itself installed (`<root>/engine`, the signed Metal package on a Mac)
 /// is exposed to upstream as a component folder: `<root>/components`.
 pub const MANAGED_COMPONENTS_DIR: &str = "components";
@@ -374,6 +408,73 @@ mod tests {
     fn manifest(version: &str, platform: &str, backend: &str) -> Value {
         json!({"schema_version": 2, "id": "strata-engine", "name": "strata-engine", "version": version,
                "platform": platform, "backend": backend, "entrypoint": "strata.exe", "build_id": "x", "files": []})
+    }
+
+    /// The Strata desktop app's Control folder: `strata.py` + `strata_control/`, no engine inside.
+    fn control_folder(root: &Path) {
+        fs::create_dir_all(root.join("strata_control")).unwrap();
+        fs::create_dir_all(root.join("serve")).unwrap();
+        fs::write(root.join("strata.py"), b"# fixture").unwrap();
+        fs::write(root.join("setup.py"), b"# fixture").unwrap();
+        fs::write(root.join("serve/server.py"), b"# fixture").unwrap();
+    }
+
+    #[test]
+    fn a_control_folder_reads_the_engine_from_the_component_folder() {
+        // #241: D:\Strata\control (Strata 0.2.15 desktop app) with engine 0.1.60 in
+        // %LOCALAPPDATA%\Strata\components; the NVFP4 gate saw no engine version at all.
+        let temp = tempfile::tempdir().unwrap();
+        let control = temp.path().join("D/Strata/control");
+        control_folder(&control);
+        let components = temp.path().join("AppData/Local/Strata/components");
+        for version in ["0.1.59", "0.1.60"] {
+            package(
+                &components,
+                &format!("{version}-windows-x86_64-cuda"),
+                manifest(version, "windows-x86_64", "cuda"),
+                Some("strata.exe"),
+            );
+        }
+        let engine = control_engine_in(&control, Some(&components), "windows-x86_64").unwrap();
+        assert_eq!(engine.version, "0.1.60");
+        assert_eq!(engine.backend, "cuda");
+        // A rollback pin wins, as upstream's server picks it.
+        fs::create_dir_all(components.join(".updates")).unwrap();
+        fs::write(
+            components.join(".updates/state.json"),
+            json!({"engine": {"pinned": "0.1.59-windows-x86_64-cuda"}}).to_string(),
+        )
+        .unwrap();
+        let pinned = control_engine_in(&control, Some(&components), "windows-x86_64").unwrap();
+        assert_eq!(pinned.version, "0.1.59");
+        // Another platform's packages, no component folder, or a folder that is not a Control: no guess.
+        assert!(control_engine_in(&control, Some(&components), "linux-x86_64").is_none());
+        assert!(control_engine_in(&control, None, "windows-x86_64").is_none());
+        let plain = temp.path().join("checkout");
+        fs::create_dir_all(plain.join("serve")).unwrap();
+        fs::write(plain.join("setup.py"), b"# fixture").unwrap();
+        fs::write(plain.join("serve/server.py"), b"# fixture").unwrap();
+        assert!(!is_control_root(&plain));
+        assert!(control_engine_in(&plain, Some(&components), "windows-x86_64").is_none());
+    }
+
+    #[test]
+    fn a_control_folder_prefers_the_engine_manager_installed_beside_it() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("strata");
+        managed_engine(&root, "0.1.47", true);
+        control_folder(&root);
+        let components = temp.path().join("components");
+        let mut newer = manifest("0.1.69", "macos-arm64", "metal");
+        newer["entrypoint"] = json!("strata");
+        package(
+            &components,
+            "0.1.69-macos-arm64-metal",
+            newer,
+            Some("strata"),
+        );
+        let engine = control_engine_in(&root, Some(&components), "macos-arm64").unwrap();
+        assert_eq!(engine.version, "0.1.47");
     }
 
     #[test]
